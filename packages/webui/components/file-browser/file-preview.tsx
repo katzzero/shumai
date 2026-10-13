@@ -58,6 +58,7 @@ export const FilePreview = ({ item, showDuration = false }: FilePreviewProps) =>
           thumbnailUrl={item.preview.thumbnailUrl!}
           videoWidth={item.preview.originalWidth!}
           videoHeight={item.preview.originalHeight!}
+          reverse={is3D}
         />
         {overlay}
       </>

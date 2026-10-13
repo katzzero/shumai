@@ -13,6 +13,8 @@ interface SpriteScrubberProps {
   frameWidth?: number
   /** Optional custom class name for the container */
   className?: string
+  /** Whether to reverse scrubbing order (e.g. for 3D model rotation so moving right rotates right) */
+  reverse?: boolean
 }
 
 interface Dimensions {
@@ -30,6 +32,7 @@ export const SpriteScrubber: React.FC<SpriteScrubberProps> = ({
   videoWidth,
   videoHeight,
   className = '',
+  reverse = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerSize, setContainerSize] = useState<Dimensions>({
@@ -99,7 +102,8 @@ export const SpriteScrubber: React.FC<SpriteScrubberProps> = ({
     setCursorX(clampedX)
 
     const percentage = clampedX / rect.width
-    const frameIndex = Math.min(Math.floor(percentage * TOTAL_FRAMES), TOTAL_FRAMES - 1)
+    const rawFrame = Math.min(Math.floor(percentage * TOTAL_FRAMES), TOTAL_FRAMES - 1)
+    const frameIndex = reverse ? TOTAL_FRAMES - 1 - rawFrame : rawFrame
 
     setCurrentFrame(frameIndex)
   }
@@ -159,6 +163,8 @@ export const SpriteScrubber: React.FC<SpriteScrubberProps> = ({
   return (
     <div
       ref={containerRef}
+      data-testid="sprite-scrubber"
+      data-frame={currentFrame}
       className={`relative w-full h-full overflow-hidden cursor-crosshair group bg-black select-none ${className}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
