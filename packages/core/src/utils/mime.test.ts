@@ -128,9 +128,7 @@ describe('getProxyType', () => {
 
   it('should detect 3d proxyType for supported 3D models', () => {
     expect(getProxyType('model/gltf-binary', 'model.glb')).toBe('3d')
-    expect(getProxyType('model/gltf+json', 'model.gltf')).toBe('3d')
     expect(getProxyType(null, 'model.glb')).toBe('3d')
-    expect(getProxyType(null, 'model.gltf')).toBe('3d')
     expect(getProxyType(null, 'character.fbx')).toBe('3d')
     expect(getProxyType('model/obj', 'mesh.obj')).toBe('3d')
     expect(getProxyType(null, 'mesh.obj')).toBe('3d')
@@ -147,5 +145,7 @@ describe('getProxyType', () => {
   it('should return null for unsupported files', () => {
     expect(getProxyType('application/zip', 'archive.zip')).toBeNull()
     expect(getProxyType(null, 'unknown.bin')).toBeNull()
+    expect(getProxyType('model/gltf+json', 'model.gltf')).toBeNull()
+    expect(getProxyType(null, 'model.gltf')).toBeNull()
   })
 })

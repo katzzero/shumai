@@ -6,9 +6,12 @@ export function is3dModel(mediaType?: string | null, filename?: string | null): 
   const lowerMediaType = mediaType?.toLowerCase() || ''
   const lowerFilename = filename?.toLowerCase() || ''
 
+  if (lowerMediaType === 'model/gltf+json' || lowerFilename.endsWith('.gltf')) {
+    return false
+  }
+
   const modelExtensions = [
     '.glb',
-    '.gltf',
     '.usd',
     '.usda',
     '.usdc',
@@ -25,7 +28,6 @@ export function is3dModel(mediaType?: string | null, filename?: string | null): 
   if (
     lowerMediaType.startsWith('model/') ||
     lowerMediaType === 'model/gltf-binary' ||
-    lowerMediaType === 'model/gltf+json' ||
     lowerMediaType === 'model/obj' ||
     lowerMediaType === 'model/stl' ||
     lowerMediaType === 'model/vnd.usdz+zip' ||
