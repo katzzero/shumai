@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+### Fixed
+
+### Changed
+
+## [0.5.2] - 2026-10-13
+
+### Added
+
 * **3d asset**: Add support for 3D model files (.glb, .gltf, .obj, .fbx, .stl, .dae, .usd, .usda, .usdc, .usdz) with automated turntable video rendering, hover sprite scrubbing, and an interactive 3D turntable viewer featuring 360° ruler scrubbing and degree-based markup comments
 * **kanban**: Related assets on a task are now clickable, taking you directly to that file or folder in its project
 * **settings**: Add an Integrations section to Team Settings with dedicated configuration for Gotenberg Document Converter, supporting connection testing and environment variable override protection
