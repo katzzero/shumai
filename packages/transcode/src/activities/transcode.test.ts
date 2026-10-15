@@ -1230,6 +1230,100 @@ describe('Transcode Activities', () => {
       expect(res.chunkKey).toMatch(/^files\/asset-abc\/tmp-embedding-chunks\/chunk-10-25-.*\.mp4$/)
     })
 
+    it('should extract frames archive when format is frames', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(child_process.execFile as any).mockImplementation(
+        (
+          _file: string,
+          args: string[],
+          cb: (err: Error | null, result: { stdout: string; stderr: string }) => void,
+        ) => {
+          if (_file === 'ffmpeg' && args) {
+            const outPattern = args[args.length - 1]
+            if (outPattern && outPattern.includes('frame_%04d.jpg')) {
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const fsActual = require('fs')
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const pathActual = require('path')
+              const dir = pathActual.dirname(outPattern)
+              fsActual.writeFileSync(
+                pathActual.join(dir, 'frame_0001.jpg'),
+                Buffer.from('mock-frame'),
+              )
+            }
+          }
+          cb(null, { stdout: '', stderr: '' })
+        },
+      )
+
+      const res = await transcodeVideoChunkActivity({
+        assetId: 'asset-abc',
+        filePath: '/tmp/full-video.mp4',
+        startTime: 10,
+        endTime: 25,
+        format: 'frames',
+      })
+
+      expect(child_process.execFile).toHaveBeenCalledWith(
+        'ffmpeg',
+        expect.arrayContaining(['-vf', 'fps=1', '-q:v', '2']),
+        expect.any(Function),
+      )
+      expect(child_process.execFile).not.toHaveBeenCalledWith(
+        'tar',
+        expect.anything(),
+        expect.anything(),
+      )
+      expect(s3Service.putObject).toHaveBeenCalledWith(
+        'shumai',
+        expect.stringMatching(/^files\/asset-abc\/tmp-embedding-chunks\/frames-10-25-.*\.tar$/),
+        expect.any(Buffer),
+        expect.any(Number),
+        'application/x-tar',
+      )
+      expect(res.chunkKey).toMatch(/^files\/asset-abc\/tmp-embedding-chunks\/frames-10-25-.*\.tar$/)
+
+      const putCall = vi.mocked(s3Service.putObject).mock.calls[0]
+      const uploadedBuffer = putCall[2] as Buffer
+      const uploadedArchive = new Bun.Archive(uploadedBuffer)
+      const archiveFiles = await uploadedArchive.files()
+      expect(archiveFiles.has('frame_0001.jpg')).toBe(true)
+      const uploadedFile = archiveFiles.get('frame_0001.jpg')!
+      expect(uploadedFile.size).toBeGreaterThan(0)
+      const uploadedFileBytes = await uploadedFile.bytes()
+      expect(uploadedFileBytes.byteLength).toBeGreaterThan(0)
+    })
+
+    it('should sample uniform 16 frames when chunk duration > 16s', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- child_process.execFile mockImplementation returns void rather than ChildProcess in unit tests
+      ;(child_process.execFile as any).mockImplementation(
+        (
+          _cmd: unknown,
+          _args: unknown,
+          cb: (err: null, res: { stdout: string; stderr: string }) => void,
+        ) => {
+          cb(null, {
+            stdout: '',
+            stderr: '',
+          })
+        },
+      )
+
+      await transcodeVideoChunkActivity({
+        assetId: 'asset-abc',
+        filePath: '/tmp/full-video.mp4',
+        startTime: 0,
+        endTime: 60,
+        format: 'frames',
+      })
+
+      expect(child_process.execFile).toHaveBeenCalledWith(
+        'ffmpeg',
+        expect.arrayContaining(['-vf', `fps=${16 / 60}`, '-vframes', '16', '-q:v', '2']),
+        expect.any(Function),
+      )
+    })
+
     it('should throw non-retryable ApplicationFailure when neither filePath nor assetKey is provided', async () => {
       expect.assertions(2)
       try {

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   generateTextEmbeddingActivity,
   extractAiMetadataActivity,
@@ -6,12 +6,12 @@ import {
   saveAssetEmbeddingsActivity,
   generateImageEmbeddingActivity,
   generateVideoChunkEmbeddingActivity,
-  generateEmbeddingActivity,
 } from './ai'
 import { s3Service } from '@shumai/core/src/s3/s3'
 import { transcodeService } from '@shumai/core'
 import { prisma, AssetType, AssetStatus } from '@shumai/db'
 import { setupTestDbHooks } from '@shumai/db/test'
+import sharp from 'sharp'
 
 vi.mock('fs', async (importOriginal) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- importOriginal returns the raw fs module, typed dynamically as any here
@@ -54,7 +54,6 @@ vi.mock('child_process', () => {
   const execFileMock: any = vi.fn((file: any, args: any, cb: any) => {
     cb(null, '120.0\n', '')
   })
-  // Setup custom promisify behavior to return { stdout, stderr }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mock functions dynamically return varying types based on test command calls
   execFileMock[Symbol.for('nodejs.util.promisify.custom')] = vi.fn(async (file: any) => {
     if (file === 'ffprobe') {
@@ -90,6 +89,14 @@ describe('AI Activities Unit Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     process.env.GEMINI_API_KEY = 'test-key'
+    delete process.env.EMBEDDING_PROVIDER
+    delete process.env.GEMMA_EMBEDDING_OPENAI_BASE_URL
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    delete process.env.EMBEDDING_PROVIDER
+    delete process.env.GEMMA_EMBEDDING_OPENAI_BASE_URL
   })
 
   it('should generate image embedding', async () => {
@@ -126,33 +133,6 @@ describe('AI Activities Unit Tests', () => {
     )
   })
 
-  it('should resolve video input via resolveInput and avoid downloadToFile in generateEmbeddingActivity', async () => {
-    vi.mocked(s3Service.downloadToFile).mockClear()
-    vi.mocked(s3Service.resolveInput).mockClear()
-    vi.mocked(s3Service.resolveInput).mockResolvedValue(
-      'https://mock-storage/files/asset-123/video.mp4',
-    )
-
-    const res = await generateEmbeddingActivity({
-      teamId: 't1',
-      assetId: 'asset-123',
-      context: {
-        agent: {},
-        asset: {
-          mediaType: 'video/mp4',
-          name: 'sample.mp4',
-          storageKey: { key: 'files/asset-123/video.mp4' },
-          media: { proxyType: 'video' },
-        },
-      },
-    })
-
-    expect(s3Service.resolveInput).toHaveBeenCalledWith('shumai', 'files/asset-123/video.mp4')
-    expect(s3Service.downloadToFile).not.toHaveBeenCalled()
-    expect(s3Service.getObject).not.toHaveBeenCalledWith('shumai', 'files/asset-123/video.mp4')
-    expect(res.embeddings.length).toBeGreaterThan(0)
-  })
-
   it('should generate text embedding successfully', async () => {
     const res = await generateTextEmbeddingActivity({
       text: 'Search query',
@@ -170,6 +150,279 @@ describe('AI Activities Unit Tests', () => {
         ],
       }),
     )
+  })
+
+  it('should generate text embedding successfully with gemma-embedding-2-openai', async () => {
+    process.env.EMBEDDING_PROVIDER = 'gemma-embedding-2-openai'
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: 'embeddinggemma-2',
+        data: [{ embedding: Array(768).fill(0.1) }],
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        usage: { prompt_tokens: 15 },
+      }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+
+    const res = await generateTextEmbeddingActivity({
+      text: 'Search query',
+      teamId: 't1',
+    })
+
+    expect(res.embedding).toHaveLength(768)
+    expect(res.usage.model).toBe('embeddinggemma-2')
+    expect(res.usage.inputTokens).toBe(15)
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:9379/v1/embeddings',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'embeddinggemma-2',
+          input: 'task: search query | text: Search query',
+        }),
+      }),
+    )
+  })
+
+  it('should generate image embedding successfully with gemma-embedding-2-openai', async () => {
+    process.env.EMBEDDING_PROVIDER = 'gemma-embedding-2-openai'
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: 'embeddinggemma-2',
+        data: [{ embedding: Array(768).fill(0.2) }],
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        usage: { prompt_tokens: 140 },
+      }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+
+    vi.mocked(s3Service.getObject).mockResolvedValue({
+      buffer: Buffer.from('test-image'),
+      contentType: 'image/png',
+    } as unknown as { buffer: Buffer; contentType: string })
+
+    const res = await generateImageEmbeddingActivity({
+      teamId: 't1',
+      assetKey: 'img.png',
+      mediaType: 'image/png',
+    })
+
+    expect(res.embedding).toHaveLength(768)
+    expect(res.usage.model).toBe('embeddinggemma-2')
+    expect(res.usage.inputTokens).toBe(140)
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:9379/v1/embeddings',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'embeddinggemma-2',
+          input: [
+            {
+              type: 'image_url',
+              // eslint-disable-next-line @typescript-eslint/naming-convention
+              image_url: {
+                url: `data:image/png;base64,${Buffer.from('test-image').toString('base64')}`,
+              },
+            },
+          ],
+        }),
+      }),
+    )
+  })
+
+  it('should respect custom GEMMA_EMBEDDING_OPENAI_BASE_URL with or without /v1 suffix', async () => {
+    process.env.EMBEDDING_PROVIDER = 'gemma-embedding-2-openai'
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: 'embeddinggemma-2',
+        data: [{ embedding: Array(768).fill(0.2) }],
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        usage: { prompt_tokens: 10 },
+      }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+
+    // Test with /v1
+    process.env.GEMMA_EMBEDDING_OPENAI_BASE_URL = 'http://custom-host:9379/v1'
+    await generateTextEmbeddingActivity({ text: 'test query', teamId: 't1' })
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      'http://custom-host:9379/v1/embeddings',
+      expect.anything(),
+    )
+
+    // Test without /v1
+    process.env.GEMMA_EMBEDDING_OPENAI_BASE_URL = 'http://custom-host:9379'
+    await generateTextEmbeddingActivity({ text: 'test query', teamId: 't1' })
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      'http://custom-host:9379/v1/embeddings',
+      expect.anything(),
+    )
+  })
+
+  it('should convert webp image to jpeg with gemma-embedding-2-openai', async () => {
+    process.env.EMBEDDING_PROVIDER = 'gemma-embedding-2-openai'
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: 'embeddinggemma-2',
+        data: [{ embedding: Array(768).fill(0.2) }],
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        usage: { prompt_tokens: 140 },
+      }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+
+    const webpBuffer = await sharp({
+      create: { width: 10, height: 10, channels: 3, background: { r: 255, g: 0, b: 0 } },
+    })
+      .webp()
+      .toBuffer()
+    vi.mocked(s3Service.getObject).mockResolvedValue({
+      buffer: webpBuffer,
+      contentType: 'image/webp',
+    } as unknown as { buffer: Buffer; contentType: string })
+
+    const res = await generateImageEmbeddingActivity({
+      teamId: 't1',
+      assetKey: 'img.webp',
+      mediaType: 'image/webp',
+    })
+
+    expect(res.embedding).toHaveLength(768)
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:9379/v1/embeddings',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('data:image/jpeg;base64,'),
+      }),
+    )
+  })
+
+  it('should generate video chunk embedding from tar archive with gemma-embedding-2-openai', async () => {
+    process.env.EMBEDDING_PROVIDER = 'gemma-embedding-2-openai'
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: 'embeddinggemma-2',
+        data: [{ embedding: Array(768).fill(0.3) }],
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        usage: { prompt_tokens: 140 },
+      }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+
+    const sampleArchive = new Bun.Archive({
+      'frame_0001.jpg': Buffer.from('frame-1'),
+    })
+    const archiveBytes = await sampleArchive.bytes()
+
+    vi.mocked(s3Service.getObject).mockResolvedValue({
+      buffer: Buffer.from(archiveBytes.buffer, archiveBytes.byteOffset, archiveBytes.byteLength),
+      contentType: 'application/x-tar',
+    } as unknown as { buffer: Buffer; contentType: string })
+
+    const res = await generateVideoChunkEmbeddingActivity({
+      teamId: 't1',
+      chunkKey: 'files/asset-1/tmp-embedding-chunks/frames-0-60.tar',
+    })
+
+    expect(res.embedding).toHaveLength(768)
+    expect(res.usage.model).toBe('embeddinggemma-2')
+    expect(mockFetch).toHaveBeenCalled()
+  })
+
+  it('should sample uniform 16 frames when chunk archive contains more than 16 frames', async () => {
+    process.env.EMBEDDING_PROVIDER = 'gemma-embedding-2-openai'
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: 'embeddinggemma-2',
+        data: [{ embedding: Array(768).fill(0.3) }],
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        usage: { prompt_tokens: 140 },
+      }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+
+    const frames: Record<string, Buffer> = {}
+    for (let i = 1; i <= 30; i++) {
+      frames[`frame_${String(i).padStart(4, '0')}.jpg`] = Buffer.from(`frame-${i}`)
+    }
+    const sampleArchive = new Bun.Archive(frames)
+    const archiveBytes = await sampleArchive.bytes()
+
+    vi.mocked(s3Service.getObject).mockResolvedValue({
+      buffer: Buffer.from(archiveBytes.buffer, archiveBytes.byteOffset, archiveBytes.byteLength),
+      contentType: 'application/x-tar',
+    } as unknown as { buffer: Buffer; contentType: string })
+
+    const res = await generateVideoChunkEmbeddingActivity({
+      teamId: 't1',
+      chunkKey: 'files/asset-1/tmp-embedding-chunks/frames-0-60.tar',
+    })
+
+    expect(res.embedding).toHaveLength(768)
+    const requestBody = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(requestBody.input).toHaveLength(16)
+  })
+
+  it('should throw non-retryable ApplicationFailure when chunk archive contains no valid frames', async () => {
+    process.env.EMBEDDING_PROVIDER = 'gemma-embedding-2-openai'
+    const sampleArchive = new Bun.Archive({
+      'info.txt': Buffer.from('not an image'),
+    })
+    const archiveBytes = await sampleArchive.bytes()
+
+    vi.mocked(s3Service.getObject).mockResolvedValue({
+      buffer: Buffer.from(archiveBytes.buffer, archiveBytes.byteOffset, archiveBytes.byteLength),
+      contentType: 'application/x-tar',
+    } as unknown as { buffer: Buffer; contentType: string })
+
+    await expect(
+      generateVideoChunkEmbeddingActivity({
+        teamId: 't1',
+        chunkKey: 'files/asset-1/tmp-embedding-chunks/frames-0-60.tar',
+      }),
+    ).rejects.toThrow('No extracted frames found in chunk archive')
+  })
+
+  it('should throw non-retryable ApplicationFailure when chunk archive data is corrupted', async () => {
+    process.env.EMBEDDING_PROVIDER = 'gemma-embedding-2-openai'
+    vi.mocked(s3Service.getObject).mockResolvedValue({
+      buffer: Buffer.from('corrupted non-tar bytes'),
+      contentType: 'application/x-tar',
+    } as unknown as { buffer: Buffer; contentType: string })
+
+    await expect(
+      generateVideoChunkEmbeddingActivity({
+        teamId: 't1',
+        chunkKey: 'files/asset-1/tmp-embedding-chunks/frames-0-60.tar',
+      }),
+    ).rejects.toThrow('Failed to read chunk archive')
+  })
+
+  it('should throw non-retryable ApplicationFailure when an extracted frame is empty (0 bytes)', async () => {
+    process.env.EMBEDDING_PROVIDER = 'gemma-embedding-2-openai'
+    const sampleArchive = new Bun.Archive({
+      'frame_0001.jpg': Buffer.alloc(0),
+    })
+    const archiveBytes = await sampleArchive.bytes()
+
+    vi.mocked(s3Service.getObject).mockResolvedValue({
+      buffer: Buffer.from(archiveBytes.buffer, archiveBytes.byteOffset, archiveBytes.byteLength),
+      contentType: 'application/x-tar',
+    } as unknown as { buffer: Buffer; contentType: string })
+
+    await expect(
+      generateVideoChunkEmbeddingActivity({
+        teamId: 't1',
+        chunkKey: 'files/asset-1/tmp-embedding-chunks/frames-0-60.tar',
+      }),
+    ).rejects.toThrow('is empty (0 bytes)')
   })
 
   describe('extractAiMetadataActivity', () => {
@@ -422,6 +675,38 @@ describe('AI Database Activities Integration', () => {
       expect(dbEmbeddings[0].startTime).toBe(0.0)
       expect(dbEmbeddings[0].endTime).toBe(60.0)
       expect(dbEmbeddings[1].startTime).toBeNull()
+    })
+
+    it('should save 768-dim embeddings to embedding_768 column in database', async () => {
+      const embeddings = [
+        {
+          embedding: Array(768).fill(0.01),
+          startTime: 0.0,
+          endTime: 60.0,
+        },
+        {
+          embedding: Array(768).fill(0.02),
+        },
+      ]
+
+      await saveAssetEmbeddingsActivity({
+        assetId: asset.id,
+        embeddings,
+      })
+
+      // Query raw embeddings from DB
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- db query output is a raw postgres result array typed as any
+      const dbEmbeddings: any[] = await prisma.$queryRaw`
+        SELECT id, asset_id as "assetId", (embedding_768 IS NOT NULL) as "has768", (embedding IS NOT NULL) as "has1536"
+        FROM asset_embeddings
+        WHERE asset_id = ${asset.id}
+      `
+
+      expect(dbEmbeddings.length).toBe(2)
+      expect(dbEmbeddings[0].has768).toBe(true)
+      expect(dbEmbeddings[0].has1536).toBe(false)
+      expect(dbEmbeddings[1].has768).toBe(true)
+      expect(dbEmbeddings[1].has1536).toBe(false)
     })
   })
 })

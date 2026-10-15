@@ -1490,6 +1490,7 @@ export interface TranscodeVideoChunkParams {
   filePath?: string
   startTime: number
   endTime: number
+  format?: 'video' | 'frames'
 }
 
 export async function transcodeVideoChunkActivity(
@@ -1500,6 +1501,82 @@ export async function transcodeVideoChunkActivity(
       message: 'Neither filePath nor assetKey was provided for video chunk transcoding',
       nonRetryable: true,
     })
+  }
+
+  if (params.format === 'frames') {
+    const tmpDir = transcodeService.createTempDir('video-chunk-frames-')
+    try {
+      const bucket = process.env.S3_BUCKET || 'shumai'
+      const inputSource =
+        params.filePath ||
+        (params.assetKey ? await s3Service.resolveInput(bucket, params.assetKey) : '')
+      if (!inputSource) {
+        throw ApplicationFailure.create({
+          message: 'Neither filePath nor assetKey was provided for video chunk transcoding',
+          nonRetryable: true,
+        })
+      }
+      const isRemote = inputSource.startsWith('http://') || inputSource.startsWith('https://')
+
+      const duration = Math.max(0.1, params.endTime - params.startTime)
+      const fpsFilter = duration > 16 ? `fps=${16 / duration}` : 'fps=1'
+      const vframesArgs = duration > 16 ? ['-vframes', '16'] : []
+
+      await execFileAsync('ffmpeg', [
+        '-y',
+        '-loglevel',
+        'warning',
+        ...(isRemote
+          ? ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5']
+          : []),
+        '-ss',
+        params.startTime.toString(),
+        '-i',
+        inputSource,
+        '-map',
+        '0:V:0',
+        '-t',
+        duration.toString(),
+        '-vf',
+        fpsFilter,
+        ...vframesArgs,
+        '-q:v',
+        '2',
+        path.join(tmpDir, 'frame_%04d.jpg'),
+      ])
+
+      const frameFiles = fs
+        .readdirSync(tmpDir)
+        .filter((f) => /\.(jpe?g|png|webp)$/i.test(f))
+        .sort()
+
+      const archiveEntries: Record<string, Buffer> = {}
+      for (const file of frameFiles) {
+        archiveEntries[file] = fs.readFileSync(path.join(tmpDir, file))
+      }
+
+      const archive = new Bun.Archive(archiveEntries)
+      const archiveBytes = await archive.bytes()
+      const archiveData = Buffer.from(
+        archiveBytes.buffer,
+        archiveBytes.byteOffset,
+        archiveBytes.byteLength,
+      )
+      const key = `files/${params.assetId}/tmp-embedding-chunks/frames-${params.startTime}-${params.endTime}-${ulid()}.tar`
+      await s3Service.putObject(bucket, key, archiveData, archiveData.length, 'application/x-tar')
+
+      return { chunkKey: key }
+    } catch (err) {
+      if (err instanceof ApplicationFailure) {
+        throw err
+      }
+      throw ApplicationFailure.create({
+        message: `Failed to extract video chunk frames for ${params.startTime}-${params.endTime}: ${err instanceof Error ? err.message : String(err)}`,
+        nonRetryable: false,
+      })
+    } finally {
+      transcodeService.removeDir(tmpDir)
+    }
   }
 
   const chunkTmp = path.join(os.tmpdir(), `video-chunk-${Date.now()}-${ulid()}.mp4`)
