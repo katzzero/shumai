@@ -3,6 +3,24 @@ title: "Changelog"
 description: "Recent updates, new features, and improvements in Shumai"
 ---
 
+<Update label="v0.5.3" description="October 16, 2026">
+
+### Added
+
+* **cli**: Add administrative `shumai regenerate-embeddings` command to regenerate multimodal vector embeddings for all existing media files across active teams
+* **docker**: Provide three Docker Compose deployment tiers (Lite, with Embedding Server, and Full) with recommended memory specifications
+* **agent**: Save video chunk embeddings incrementally to the database as each chunk finishes, preserving completed progress on failure and resuming from where it left off on retry
+* **agent**: Add support for local LiteRT-LM Gemma Embedding 2 (`gemma-embedding-2-openai`) provider and environment-enforced read-only embedding agents with automatic 768-dimensional vector search indexing
+
+### Fixed
+
+### Changed
+
+* **search**: Display search results in a responsive card grid with interactive hover video sprite scrubbing, semantic match chunk time range previews, and new-tab opening on click
+* **search**: Significantly improve semantic search response times by generating query text embeddings directly with in-memory caching instead of dispatching background tasks
+
+</Update>
+
 <Update label="v0.5.2" description="October 13, 2026">
 
 ### Added

@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+### Fixed
+
+### Changed
+
+## [0.5.3] - 2026-10-16
+
+### Added
+
 * **cli**: Add administrative `shumai regenerate-embeddings` command to regenerate multimodal vector embeddings for all existing media files across active teams
 * **docker**: Provide three Docker Compose deployment tiers (Lite, with Embedding Server, and Full) with recommended memory specifications
 * **agent**: Save video chunk embeddings incrementally to the database as each chunk finishes, preserving completed progress on failure and resuming from where it left off on retry
