@@ -63,7 +63,7 @@ export class TextEmbeddingService {
       }
     }
 
-    const signal = options?.signal ?? AbortSignal.timeout(5000)
+    const signal = options?.signal ?? AbortSignal.timeout(15000)
 
     let result: TextEmbeddingResult
     if (provider === 'gemma-embedding-2-openai') {

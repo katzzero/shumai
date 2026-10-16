@@ -250,12 +250,49 @@ export async function getEmbeddingContextActivity(params: { teamId: string; asse
   const chunkOverlap = Number.isFinite(parsedOverlap) && parsedOverlap >= 0 ? parsedOverlap : 5.0
   const embeddingProvider = process.env.EMBEDDING_PROVIDER || 'gemini-embedding-2'
 
+  const existingEmbeddings = await prisma.$queryRaw<ExistingAssetEmbeddingInfo[]>`
+    SELECT
+      id,
+      start_time as "startTime",
+      end_time as "endTime",
+      (embedding IS NOT NULL) as "has1536",
+      (embedding_768 IS NOT NULL) as "has768"
+    FROM asset_embeddings
+    WHERE asset_id = ${params.assetId}
+  `
+
   return {
     agent,
     asset,
     chunkDuration,
     chunkOverlap,
     embeddingProvider,
+    existingEmbeddings,
+  }
+}
+
+export interface ExistingAssetEmbeddingInfo {
+  id: string
+  startTime: number | null
+  endTime: number | null
+  has1536: boolean
+  has768: boolean
+}
+
+export async function deleteAssetEmbeddingsActivity(params: { assetId: string; ids?: string[] }) {
+  if (params.ids && params.ids.length > 0) {
+    await prisma.assetEmbedding.deleteMany({
+      where: {
+        assetId: params.assetId,
+        id: { in: params.ids },
+      },
+    })
+  } else {
+    await prisma.assetEmbedding.deleteMany({
+      where: {
+        assetId: params.assetId,
+      },
+    })
   }
 }
 
@@ -360,6 +397,38 @@ export async function generateImageEmbeddingActivity(
   }
 }
 
+/**
+ * Standard aspect ratios for video embedding:
+ * 1:1, 4:3, 3:4, 16:9, 9:16, 21:9 (including ultrawide 64:27), and 9:21.
+ *
+ * For these standard ratios, 15 frames guarantees that total input tokens stay strictly
+ * within the 2048 token signature bucket (<= 1982 tokens). For non-standard or custom
+ * aspect ratios (e.g. 5:3, 1.4:1), 14 frames is used to mathematically guarantee
+ * that sequence length never exceeds 2048 tokens (<= 1990 tokens), preventing OOM errors.
+ */
+export function getGemmaEmbeddingTargetFrameCount(width?: number, height?: number): number {
+  if (!width || !height || width <= 0 || height <= 0) {
+    return 14
+  }
+
+  const ratio = width / height
+  const standardRatios = [
+    1 / 1, // 1:1
+    4 / 3, // 4:3
+    3 / 4, // 3:4
+    16 / 9, // 16:9
+    9 / 16, // 9:16
+    21 / 9, // 21:9
+    64 / 27, // 21:9 ultrawide (2560x1080, 3440x1440)
+    9 / 21, // 9:21
+    27 / 64, // 9:21 ultrawide portrait
+  ]
+
+  // Allow up to 3% relative tolerance for minor encoder rounding (e.g. 854x480 vs 16:9)
+  const isStandard = standardRatios.some((std) => Math.abs(ratio - std) / std <= 0.03)
+  return isStandard ? 15 : 14
+}
+
 export interface GenerateVideoChunkEmbeddingParams {
   teamId: string
   chunkKey: string
@@ -402,10 +471,27 @@ export async function generateVideoChunkEmbeddingActivity(
       })
     }
 
+    let targetFrameCount = 14
+    try {
+      const firstFile = filesMap.get(frameFiles[0])
+      if (firstFile) {
+        const firstFileBytes = await firstFile.bytes()
+        if (firstFileBytes.byteLength > 0) {
+          const meta = await sharp(Buffer.from(firstFileBytes)).metadata()
+          targetFrameCount = getGemmaEmbeddingTargetFrameCount(meta.width, meta.height)
+        }
+      }
+    } catch {
+      targetFrameCount = 14
+    }
+
     let selectedFrames = frameFiles
-    if (selectedFrames.length > 16) {
-      const step = (selectedFrames.length - 1) / 15
-      selectedFrames = Array.from({ length: 16 }, (_, i) => selectedFrames[Math.round(i * step)])
+    if (selectedFrames.length > targetFrameCount) {
+      const step = (selectedFrames.length - 1) / (targetFrameCount - 1)
+      selectedFrames = Array.from(
+        { length: targetFrameCount },
+        (_, i) => selectedFrames[Math.round(i * step)],
+      )
     }
 
     const input: OpenAiEmbeddingItem[] = await Promise.all(
