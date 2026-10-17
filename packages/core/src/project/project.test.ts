@@ -42,7 +42,7 @@ describe('ProjectService', () => {
 
       const u1 = await prisma.user.create({ data: { name: 'u1', email: 'u1@example.com' } })
       await prisma.teamMember.create({
-        data: { teamId: team.id, userId: u1.id, role: 'editor', scope: 'team' },
+        data: { teamId: team.id, userId: u1.id, role: 'owner', scope: 'team' },
       })
 
       const res = await projectService.listProjects({
@@ -490,7 +490,7 @@ describe('ProjectService', () => {
         data: { name: 'gup-u1', email: 'gup-u1@example.com' },
       })
       await prisma.teamMember.create({
-        data: { teamId: team.id, userId: user.id, role: 'editor', scope: 'team' },
+        data: { teamId: team.id, userId: user.id, role: 'owner', scope: 'team' },
       })
 
       const result = await projectService.getUserProjects(user.id)

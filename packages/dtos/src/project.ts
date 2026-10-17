@@ -59,7 +59,7 @@ export type GetProjectTeamResponse = z.infer<typeof getProjectTeamResponseSchema
 export const projectUserInfoSchema = z.object({
   id: z.string(),
   name: z.string(),
-  role: z.enum(['owner', 'editor', 'reviewer', 'bot', 'unknown']),
+  role: z.enum(['owner', 'admin', 'editor', 'reviewer', 'bot', 'unknown']),
   type: z.nativeEnum(UserType).optional(),
   image: z.string().optional(),
   scope: z.enum(['team', 'project']).optional(),
@@ -76,7 +76,7 @@ export const recentlyDeletedRequestSchema = z
   .merge(paginationParamsSchema)
 
 export const updateProjectMemberRoleRequestSchema = z.object({
-  role: z.enum(['editor', 'reviewer']),
+  role: z.enum(['admin', 'editor', 'reviewer']),
 })
 export type UpdateProjectMemberRoleRequest = z.infer<typeof updateProjectMemberRoleRequestSchema>
 
@@ -107,7 +107,7 @@ export interface ServiceListProjectsRequest {
 export interface ServiceAddProjectMemberRequest {
   projectId: string
   userId: string
-  role: 'owner' | 'editor' | 'reviewer' | 'bot' | 'unknown'
+  role: 'owner' | 'admin' | 'editor' | 'reviewer' | 'bot' | 'unknown'
 }
 
 export interface ServiceListProjectMembersRequest {
@@ -119,19 +119,19 @@ export interface ServiceListProjectMembersRequest {
 export interface ServiceUpdateProjectMemberRoleRequest {
   projectId: string
   userId: string
-  role: 'editor' | 'reviewer'
+  role: 'admin' | 'editor' | 'reviewer'
 }
 
 export const addProjectMemberRequestSchema = z.object({
   userId: z.string(),
-  role: z.enum(['owner', 'editor', 'reviewer']),
+  role: z.enum(['owner', 'admin', 'editor', 'reviewer']),
 })
 export type AddProjectMemberRequest = z.infer<typeof addProjectMemberRequestSchema>
 
 export const projectMeResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
-  role: z.enum(['owner', 'editor', 'reviewer', 'bot', 'unknown']),
+  role: z.enum(['owner', 'admin', 'editor', 'reviewer', 'bot', 'unknown']),
   image: z.string().optional(),
 })
 export type ProjectMeResponse = z.infer<typeof projectMeResponseSchema>
