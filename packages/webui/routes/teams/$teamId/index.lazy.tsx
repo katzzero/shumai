@@ -3,6 +3,8 @@ import type { ProjectInfo } from '@shumai/dtos'
 import { usePermissions } from '@/ui/hooks/use-permissions'
 import { client } from '@/ui/api/client'
 import { MembersDialog } from '@/ui/components/members-dialog'
+import type { Member } from '@/ui/components/members-dialog'
+import { ProjectAccessDialog } from '@/ui/components/project-access-dialog'
 import { ProjectDialog } from '@/ui/components/project-dialog'
 import { SortDropdown } from '@/ui/components/sort-dropdown'
 import { m } from '@/ui/paraglide/messages.js'
@@ -57,6 +59,7 @@ function TeamPage() {
 
   // State for Members Dialog
   const [isMembersDialogOpen, setIsMembersDialogOpen] = useState(false)
+  const [accessMember, setAccessMember] = useState<Member | null>(null)
 
   // Sort State & Preference
   const { metadata, setMetadata: setUserMetadata } = useUserMetadataStore()
@@ -231,7 +234,7 @@ function TeamPage() {
   }
 
   const updateMemberRoleMutation = useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: 'editor' | 'reviewer' }) => {
+    mutationFn: async ({ userId, role }: { userId: string; role: 'admin' | 'editor' | 'reviewer' }) => {
       const res = await client.api.teams[':teamId'].members[':userId'].$patch({
         param: { teamId, userId },
         json: { role },
@@ -501,6 +504,7 @@ function TeamPage() {
         type="team"
         members={safeMembers}
         isOwner={me?.role === 'owner'}
+        isAdmin={me?.role === 'admin' || me?.role === 'owner'}
         onInvite={handleInvite}
         onUpdateRole={async (memberId, role) => {
           await updateMemberRoleMutation.mutateAsync({ userId: memberId, role })
@@ -509,6 +513,18 @@ function TeamPage() {
           await removeMemberMutation.mutateAsync(memberId)
         }}
         currentUserId={me?.id}
+        onManageAccess={(member) => setAccessMember(member)}
+      />
+
+      <ProjectAccessDialog
+        open={!!accessMember}
+        onOpenChange={(open) => {
+          if (!open) setAccessMember(null)
+        }}
+        memberName={accessMember?.name}
+        teamId={teamId}
+        memberId={accessMember?.id ?? ''}
+        projects={(projects?.data ?? []).map((p) => ({ id: p.id!, name: p.name }))}
       />
     </div>
   )

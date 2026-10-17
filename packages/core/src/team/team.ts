@@ -3,6 +3,7 @@ import { Prisma } from '@shumai/db'
 import { PaginatedData, paginateQuery } from '@shumai/core/src/pagination'
 import { ProviderService, providerService } from '@shumai/core/src/provider/provider'
 import { notificationService } from '@shumai/core/src/notification/notification'
+import { userService } from '@shumai/core/src/user/user'
 import { getAvatarUrl } from '@shumai/core/src/user/avatar'
 import { HTTPException } from 'hono/http-exception'
 import { getAllowedAgentRoles } from '@shumai/core/src/agent/permissions'
@@ -144,6 +145,34 @@ export class TeamService {
         },
       })
     }
+  }
+
+  async createMember(
+    teamId: string,
+    data: { name: string; email: string; password: string; role: 'admin' | 'editor' | 'reviewer'; scope: 'team' | 'project'; projectIds?: string[] },
+  ): Promise<{ id: string }> {
+    const user = await userService.createUser({ name: data.name, email: data.email, password: data.password })
+
+    const member = await prisma.teamMember.create({
+      data: {
+        teamId,
+        userId: user.id,
+        role: data.role,
+        scope: data.scope,
+      },
+    })
+
+    if (data.scope === 'project' && data.projectIds && data.projectIds.length > 0) {
+      await prisma.projectMember.createMany({
+        data: data.projectIds.map((projectId) => ({
+          projectId,
+          teamMemberId: member.id,
+          role: data.role,
+        })),
+      })
+    }
+
+    return { id: user.id }
   }
 
   async getMe(req: ServiceGetMeRequest): Promise<GetMeResponse> {
@@ -298,6 +327,67 @@ export class TeamService {
     await prisma.teamMember.delete({
       where: { id: member.id },
     })
+  }
+
+  async setMemberProjectAccess(
+    teamId: string,
+    userId: string,
+    projectIds: string[] | null,
+  ): Promise<void> {
+    const member = await prisma.teamMember.findUnique({
+      where: {
+        teamIdUserId: {
+          teamId: teamId,
+          userId: userId,
+        },
+      },
+    })
+
+    if (!member) throw new HTTPException(404, { message: 'Member not found' })
+    if (member.role === 'owner') throw new HTTPException(403, { message: 'Cannot change project access of an owner' })
+
+    if (projectIds === null) {
+      await prisma.$transaction(async (tx) => {
+        await tx.projectMember.deleteMany({ where: { teamMemberId: member.id } })
+        await tx.teamMember.update({
+          where: { id: member.id },
+          data: { scope: 'team' },
+        })
+      })
+      return
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.projectMember.deleteMany({ where: { teamMemberId: member.id } })
+      if (projectIds.length > 0) {
+        await tx.projectMember.createMany({
+          data: projectIds.map((projectId) => ({
+            projectId,
+            teamMemberId: member.id,
+            role: member.role,
+          })),
+        })
+      }
+      await tx.teamMember.update({
+        where: { id: member.id },
+        data: { scope: projectIds.length > 0 ? 'project' : 'project' },
+      })
+    })
+  }
+
+  async getMemberProjectAccess(teamId: string, userId: string): Promise<string[]> {
+    const member = await prisma.teamMember.findUnique({
+      where: {
+        teamIdUserId: {
+          teamId: teamId,
+          userId: userId,
+        },
+      },
+      include: { projectMembers: true },
+    })
+    if (!member) throw new HTTPException(404, { message: 'Member not found' })
+    if (member.scope === 'team') return [] // empty means all
+    return member.projectMembers.map((pm) => pm.projectId)
   }
 
   async getSettings(teamId: string): Promise<TeamSettingsResponse> {
@@ -491,7 +581,7 @@ export class TeamService {
     const member = await prisma.teamMember.findFirst({
       where: {
         userId,
-        role: { in: ['owner', 'editor'] },
+        role: { in: ['owner', 'admin', 'editor'] },
       },
     })
     return !!member

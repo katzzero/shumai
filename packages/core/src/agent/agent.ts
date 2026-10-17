@@ -412,7 +412,7 @@ export class AgentService {
     })
   }
 
-  async updateAgentPermission(agentId: string, permission: 'owner' | 'editor' | 'reviewer') {
+  async updateAgentPermission(agentId: string, permission: 'owner' | 'admin' | 'editor' | 'reviewer') {
     const existing = await this.prismaClient.agent.findUnique({
       where: { id: agentId },
     })

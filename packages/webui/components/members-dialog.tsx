@@ -46,12 +46,14 @@ interface MembersDialogProps {
   title: string
   members: Member[]
   isOwner: boolean
+  isAdmin?: boolean
   onInvite?: (role: 'editor' | 'reviewer') => Promise<string>
-  onUpdateRole?: (memberId: string, role: 'editor' | 'reviewer') => Promise<void>
+  onUpdateRole?: (memberId: string, role: 'admin' | 'editor' | 'reviewer') => Promise<void>
   onRemoveMember?: (memberId: string) => Promise<void>
   currentUserId?: string
   availableMembersToAdd?: Member[]
-  onAddMember?: (userId: string, role: 'editor' | 'reviewer') => Promise<void>
+  onAddMember?: (userId: string, role: 'admin' | 'editor' | 'reviewer') => Promise<void>
+  onManageAccess?: (member: Member) => void
   type?: 'project' | 'team'
 }
 
@@ -61,12 +63,14 @@ export function MembersDialog({
   title,
   members,
   isOwner,
+  isAdmin,
   onInvite,
   onUpdateRole,
   onRemoveMember,
   currentUserId,
   availableMembersToAdd,
   onAddMember,
+  onManageAccess,
   type = 'team',
 }: MembersDialogProps) {
   const [inviteRole, setInviteRole] = useState<'editor' | 'reviewer'>('editor')
@@ -74,7 +78,7 @@ export function MembersDialog({
   const [isGenerating, setIsGenerating] = useState(false)
   const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null)
   const [memberToRemove, setMemberToRemove] = useState<Member | null>(null)
-  const [rolesToAdd, setRolesToAdd] = useState<Record<string, 'editor' | 'reviewer'>>({})
+  const [rolesToAdd, setRolesToAdd] = useState<Record<string, 'admin' | 'editor' | 'reviewer'>>({})
   const [addingMemberId, setAddingMemberId] = useState<string | null>(null)
 
   const localizeRole = (role?: string) => {
@@ -82,6 +86,8 @@ export function MembersDialog({
     switch (role.toLowerCase()) {
       case 'owner':
         return m.owner()
+      case 'admin':
+        return 'Admin'
       case 'editor':
         return m.editor()
       case 'reviewer':
@@ -91,11 +97,11 @@ export function MembersDialog({
     }
   }
 
-  const setRoleToAdd = (memberId: string, role: 'editor' | 'reviewer') => {
+  const setRoleToAdd = (memberId: string, role: 'admin' | 'editor' | 'reviewer') => {
     setRolesToAdd((prev) => ({ ...prev, [memberId]: role }))
   }
 
-  const handleUpdateRole = async (memberId: string, role: 'editor' | 'reviewer') => {
+  const handleUpdateRole = async (memberId: string, role: 'admin' | 'editor' | 'reviewer') => {
     if (!onUpdateRole) return
     setUpdatingMemberId(memberId)
     try {
@@ -234,7 +240,7 @@ export function MembersDialog({
                     </div>
                   </div>
 
-                  {isOwner && member.role !== 'owner' && member.id !== currentUserId && (
+                  {(isOwner || isAdmin) && member.role !== 'owner' && member.id !== currentUserId && (
                     <div className="flex items-center gap-2">
                       {isProjectScopedInTeamView ? (
                         <TooltipProvider>
@@ -273,9 +279,12 @@ export function MembersDialog({
                             <DropdownMenuRadioGroup
                               value={member.role}
                               onValueChange={(v) =>
-                                handleUpdateRole(member.id!, v as 'editor' | 'reviewer')
+                                handleUpdateRole(member.id!, v as 'admin' | 'editor' | 'reviewer')
                               }
                             >
+                              <DropdownMenuRadioItem value="admin" className="text-xs">
+                                Admin
+                              </DropdownMenuRadioItem>
                               <DropdownMenuRadioItem value="editor" className="text-xs">
                                 {m.editor()}
                               </DropdownMenuRadioItem>
@@ -285,6 +294,16 @@ export function MembersDialog({
                             </DropdownMenuRadioGroup>
                           </DropdownMenuContent>
                         </DropdownMenu>
+                      )}
+                      {onManageAccess && type === 'team' && member.role !== 'owner' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          onClick={() => onManageAccess(member)}
+                        >
+                          Access
+                        </Button>
                       )}
                       <Button
                         variant="ghost"
@@ -380,9 +399,12 @@ export function MembersDialog({
                             <DropdownMenuRadioGroup
                               value={currentRole}
                               onValueChange={(v) =>
-                                setRoleToAdd(member.id!, v as 'editor' | 'reviewer')
+                                setRoleToAdd(member.id!, v as 'admin' | 'editor' | 'reviewer')
                               }
                             >
+                              <DropdownMenuRadioItem value="admin" className="text-xs">
+                                Admin
+                              </DropdownMenuRadioItem>
                               <DropdownMenuRadioItem value="editor" className="text-xs">
                                 {m.editor()}
                               </DropdownMenuRadioItem>
@@ -475,9 +497,12 @@ export function MembersDialog({
                             <DropdownMenuRadioGroup
                               value={currentRole}
                               onValueChange={(v) =>
-                                setRoleToAdd(member.id!, v as 'editor' | 'reviewer')
+                                setRoleToAdd(member.id!, v as 'admin' | 'editor' | 'reviewer')
                               }
                             >
+                              <DropdownMenuRadioItem value="admin" className="text-xs">
+                                Admin
+                              </DropdownMenuRadioItem>
                               <DropdownMenuRadioItem value="editor" className="text-xs">
                                 {m.editor()}
                               </DropdownMenuRadioItem>
@@ -537,6 +562,7 @@ export function MembersDialog({
                         value={inviteRole}
                         onValueChange={(v) => setInviteRole(v as 'editor' | 'reviewer')}
                       >
+                        <DropdownMenuRadioItem value="admin">Admin</DropdownMenuRadioItem>
                         <DropdownMenuRadioItem value="editor">{m.editor()}</DropdownMenuRadioItem>
                         <DropdownMenuRadioItem value="reviewer">
                           {m.reviewer()}

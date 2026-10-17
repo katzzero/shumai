@@ -6,7 +6,7 @@ export type McpServerAuthType = z.infer<typeof mcpServerAuthTypeSchema>
 export const mcpTransportSchema = z.enum(['streamable_http', 'sse'])
 export type McpTransport = z.infer<typeof mcpTransportSchema>
 
-export const mcpServerPermissionSchema = z.enum(['owner', 'editor', 'reviewer'])
+export const mcpServerPermissionSchema = z.enum(['owner', 'admin', 'editor', 'reviewer'])
 export type McpServerPermission = z.infer<typeof mcpServerPermissionSchema>
 
 export const mcpOauthConfigSchema = z.object({

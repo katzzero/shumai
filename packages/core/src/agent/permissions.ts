@@ -8,7 +8,8 @@ import type { TeamMemberRole } from '@shumai/db'
 const ROLE_LEVELS: Record<TeamMemberRole, number> = {
   reviewer: 1,
   editor: 2,
-  owner: 3,
+  admin: 3,
+  owner: 4,
 }
 
 /**
@@ -38,7 +39,8 @@ export function getAgentRequiredLevel(permission: TeamMemberRole | null | undefi
  */
 export function getAllowedAgentRoles(role: TeamMemberRole | null | undefined): TeamMemberRole[] {
   const level = getRoleLevel(role)
-  if (level >= 3) return ['reviewer', 'editor', 'owner']
+  if (level >= 4) return ['reviewer', 'editor', 'admin', 'owner']
+  if (level === 3) return ['reviewer', 'editor', 'admin']
   if (level === 2) return ['reviewer', 'editor']
   return ['reviewer']
 }

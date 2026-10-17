@@ -199,7 +199,7 @@ export function FileBrowserToolbar({
     (tm) => !safeProjectMembers.some((pm) => pm.id === tm.id),
   )
 
-  const handleAddProjectMember = async (userId: string, role: 'editor' | 'reviewer' | 'owner') => {
+  const handleAddProjectMember = async (userId: string, role: 'admin' | 'admin' | 'editor' | 'reviewer' | 'owner') => {
     await addProjectMemberMutation.mutateAsync({
       param: { projectId },
       json: { userId, role },
@@ -207,7 +207,7 @@ export function FileBrowserToolbar({
   }
 
   const updateMemberRoleMutation = useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: 'editor' | 'reviewer' }) => {
+    mutationFn: async ({ userId, role }: { userId: string; role: 'admin' | 'editor' | 'reviewer' }) => {
       const res = await client.api.projects[':projectId'].members[':userId'].$patch({
         param: { projectId, userId },
         json: { role },
@@ -435,6 +435,7 @@ export function FileBrowserToolbar({
         type="project"
         members={members || []}
         isOwner={me?.role === 'owner'}
+        isAdmin={me?.role === 'admin' || me?.role === 'owner'}
         onInvite={handleInvite}
         onUpdateRole={async (memberId, role) => {
           await updateMemberRoleMutation.mutateAsync({ userId: memberId, role })

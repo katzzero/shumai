@@ -36,7 +36,7 @@ export const getMeResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
   email: z.string().optional(),
-  role: z.enum(['owner', 'editor', 'reviewer', 'bot', 'unknown']),
+  role: z.enum(['owner', 'admin', 'editor', 'reviewer', 'bot', 'unknown']),
   image: z.string().optional(),
   unreadNotificationCount: z.number().optional(),
 })
@@ -51,7 +51,7 @@ export type UpdateMeRequest = z.infer<typeof updateMeRequestSchema>
 export const userInfoSchema = z.object({
   id: z.string(),
   name: z.string(),
-  role: z.enum(['owner', 'editor', 'reviewer', 'bot', 'unknown']),
+  role: z.enum(['owner', 'admin', 'editor', 'reviewer', 'bot', 'unknown']),
   email: z.string().optional(),
   type: z.nativeEnum(UserType).optional(),
   image: z.string().optional(),
@@ -207,7 +207,7 @@ export const updateSandboxSettingsRequestSchema = z.object({
 export type UpdateSandboxSettingsRequest = z.infer<typeof updateSandboxSettingsRequestSchema>
 
 export const updateTeamMemberRoleRequestSchema = z.object({
-  role: z.enum(['editor', 'reviewer']),
+  role: z.enum(['admin', 'editor', 'reviewer']),
 })
 export type UpdateTeamMemberRoleRequest = z.infer<typeof updateTeamMemberRoleRequestSchema>
 
@@ -241,5 +241,5 @@ export interface ServiceGetTeamMembersRequest {
 export interface ServiceUpdateTeamMemberRoleRequest {
   teamId: string
   userId: string
-  role: 'editor' | 'reviewer'
+  role: 'admin' | 'editor' | 'reviewer'
 }
