@@ -332,10 +332,10 @@ export class AuthzService {
       case Permission.Read:
         return
       case Permission.Edit:
-        if (role === 'owner' || role === 'editor') return
+        if (role === 'owner' || role === 'admin' || role === 'editor') return
         break
       case Permission.Admin:
-        if (role === 'owner') return
+        if (role === 'owner' || role === 'admin') return
         break
     }
     throw new HTTPException(403, { message: 'Permission denied' })

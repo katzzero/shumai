@@ -43,7 +43,7 @@ export const updateSkillConfigRequestSchema = z.object({
 export type UpdateSkillConfigRequest = z.infer<typeof updateSkillConfigRequestSchema>
 
 export const updateSkillPermissionRequestSchema = z.object({
-  permission: z.enum(['owner', 'editor', 'reviewer']),
+  permission: z.enum(['owner', 'admin', 'editor', 'reviewer']),
 })
 
 export type UpdateSkillPermissionRequest = z.infer<typeof updateSkillPermissionRequestSchema>

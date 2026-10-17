@@ -6,7 +6,8 @@ describe('agent permission helpers', () => {
     it('maps each role to its level', () => {
       expect(getRoleLevel('reviewer')).toBe(1)
       expect(getRoleLevel('editor')).toBe(2)
-      expect(getRoleLevel('owner')).toBe(3)
+      expect(getRoleLevel('admin')).toBe(3)
+      expect(getRoleLevel('owner')).toBe(4)
     })
 
     it('resolves missing roles to 0 (fail closed)', () => {
@@ -19,7 +20,8 @@ describe('agent permission helpers', () => {
     it('maps each permission to its required level', () => {
       expect(getAgentRequiredLevel('reviewer')).toBe(1)
       expect(getAgentRequiredLevel('editor')).toBe(2)
-      expect(getAgentRequiredLevel('owner')).toBe(3)
+      expect(getAgentRequiredLevel('admin')).toBe(3)
+      expect(getAgentRequiredLevel('owner')).toBe(4)
     })
 
     it('defaults missing permissions to reviewer level (1)', () => {
@@ -30,7 +32,8 @@ describe('agent permission helpers', () => {
 
   describe('getAllowedAgentRoles', () => {
     it('returns inclusive role sets per hierarchy', () => {
-      expect(getAllowedAgentRoles('owner')).toEqual(['reviewer', 'editor', 'owner'])
+      expect(getAllowedAgentRoles('owner')).toEqual(['reviewer', 'editor', 'admin', 'owner'])
+      expect(getAllowedAgentRoles('admin')).toEqual(['reviewer', 'editor', 'admin'])
       expect(getAllowedAgentRoles('editor')).toEqual(['reviewer', 'editor'])
       expect(getAllowedAgentRoles('reviewer')).toEqual(['reviewer'])
     })

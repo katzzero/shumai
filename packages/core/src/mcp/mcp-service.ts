@@ -55,7 +55,7 @@ export interface McpServerRecord {
   transport: 'streamable_http' | 'sse'
   authConfig: PrismaJson.McpServerAuthConfig | null
   config: PrismaJson.McpServerConfig | null
-  permission: 'owner' | 'editor' | 'reviewer'
+  permission: 'owner' | 'admin' | 'editor' | 'reviewer'
   tools: PrismaJson.McpToolInfo[] | null
   status: string
   lastError: string | null
@@ -177,7 +177,7 @@ export class McpService {
 
   async updateServerPermission(
     id: string,
-    permission: 'owner' | 'editor' | 'reviewer',
+    permission: 'owner' | 'admin' | 'editor' | 'reviewer',
   ): Promise<McpServerInfo> {
     const server = await prisma.mcpServer.update({
       where: { id },
@@ -227,7 +227,7 @@ export class McpService {
     transport: 'streamable_http' | 'sse'
     authConfig: unknown
     config: unknown
-    permission: 'owner' | 'editor' | 'reviewer'
+    permission: 'owner' | 'admin' | 'editor' | 'reviewer'
     tools: unknown
     status: string
     lastError: string | null

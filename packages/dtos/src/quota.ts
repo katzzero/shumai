@@ -59,7 +59,7 @@ export function formatQuotaPeriod(period: QuotaPeriod | string): string {
 export const quotaResourceTypeSchema = z.nativeEnum(QuotaResourceType)
 export type QuotaResourceTypeEnum = z.infer<typeof quotaResourceTypeSchema>
 
-export const quotaRoleSchema = z.enum(['owner', 'editor', 'reviewer'])
+export const quotaRoleSchema = z.enum(['owner', 'admin', 'editor', 'reviewer'])
 export type QuotaRole = z.infer<typeof quotaRoleSchema>
 
 export const mcpResourceDataSchema = z.object({

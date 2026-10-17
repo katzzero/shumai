@@ -9,7 +9,7 @@ export const agentTypeSchema = z.nativeEnum(AgentType)
 export const thinkingLevelSchema = z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
 export type ThinkingLevel = z.infer<typeof thinkingLevelSchema>
 
-export const agentPermissionSchema = z.enum(['owner', 'editor', 'reviewer'])
+export const agentPermissionSchema = z.enum(['owner', 'admin', 'editor', 'reviewer'])
 export type AgentPermission = z.infer<typeof agentPermissionSchema>
 
 export const DEFAULT_DENIED_TOOLS = ['delete_asset'] as const

@@ -100,6 +100,7 @@ export type NotificationEmailStatus = (typeof NotificationEmailStatus)[keyof typ
 
 export const ProjectMemberRole = {
   owner: 'owner',
+  admin: 'admin',
   editor: 'editor',
   reviewer: 'reviewer'
 } as const
@@ -126,6 +127,7 @@ export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus]
 
 export const TeamMemberRole = {
   owner: 'owner',
+  admin: 'admin',
   editor: 'editor',
   reviewer: 'reviewer'
 } as const

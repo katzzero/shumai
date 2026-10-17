@@ -448,12 +448,12 @@ describe('AuthzService', () => {
         data: { name: 'Project Bar', teamId: team.id },
       })
 
-      // Jane is a team editor (scope: team)
+      // Jane is a team owner (scope: team)
       await prisma.teamMember.create({
-        data: { teamId: team.id, userId: user.id, role: 'editor', scope: 'team' },
+        data: { teamId: team.id, userId: user.id, role: 'owner', scope: 'team' },
       })
 
-      // Jane has no project-specific record on Project Bar, should fall back to team role (editor)
+      // Jane has no project-specific record on Project Bar, should fall back to team role (owner)
       await expect(
         authzService.hasPermission({
           type: ResourceType.Project,

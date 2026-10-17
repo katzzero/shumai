@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import { zValidator } from '@hono/zod-validator'
 import { authzService, Permission, ResourceType } from '@shumai/core/src/authz/authz'
 import { teamService } from '@shumai/core/src/team/team'
@@ -29,6 +30,8 @@ import { turntableService } from '@shumai/core/src/turntable/turntable'
 import { gotenbergService } from '@shumai/core/src/gotenberg/gotenberg'
 import { NotificationType } from '@shumai/db'
 import type { Prisma } from '@shumai/db'
+import { prisma } from '@shumai/db'
+import { z } from 'zod'
 
 type User = Prisma.UserGetPayload<Record<string, never>>
 
@@ -156,6 +159,15 @@ const route = new Hono<{ Variables: { user: User } }>()
         id: teamId,
       })
 
+      if (req.role === 'admin') {
+        const requester = await prisma.teamMember.findUnique({
+          where: { teamIdUserId: { teamId, userId: user.id } },
+        })
+        if (!requester || requester.role !== 'owner') {
+          throw new HTTPException(403, { message: 'Only owners can assign the admin role' })
+        }
+      }
+
       await teamService.updateMemberRole({
         teamId,
         userId,
@@ -195,6 +207,93 @@ const route = new Hono<{ Variables: { user: User } }>()
 
     return c.json({ success: true })
   })
+  .get('/teams/:teamId/members/:userId/projects', async (c) => {
+    const user = c.get('user')
+    const teamId = c.req.param('teamId')
+    const userId = c.req.param('userId')
+
+    await authzService.hasPermission({
+      user,
+      permission: Permission.Admin,
+      type: ResourceType.Team,
+      id: teamId,
+    })
+
+    const projectIds = await teamService.getMemberProjectAccess(teamId, userId)
+    return c.json({ projectIds, allAccess: projectIds.length === 0 })
+  })
+  .put(
+    '/teams/:teamId/members/:userId/projects',
+    zValidator('json', z.object({ projectIds: z.array(z.string()).nullable() })),
+    async (c) => {
+      const user = c.get('user')
+      const teamId = c.req.param('teamId')
+      const userId = c.req.param('userId')
+      const req = c.req.valid('json')
+
+      await authzService.hasPermission({
+        user,
+        permission: Permission.Admin,
+        type: ResourceType.Team,
+        id: teamId,
+      })
+
+      await teamService.setMemberProjectAccess(teamId, userId, req.projectIds)
+
+      await auditLogService.logAction({
+        action: AuditAction.team_member_update,
+        teamId,
+        userId: user.id,
+        itemId: userId,
+      })
+
+      return c.json({ success: true })
+    },
+  )
+  .post(
+    '/teams/:teamId/members/create',
+    zValidator(
+      'json',
+      z.object({
+        name: z.string().min(1),
+        email: z.string().email(),
+        password: z.string().min(3),
+        role: z.enum(['admin', 'editor', 'reviewer']),
+        scope: z.enum(['team', 'project']).default('team'),
+        projectIds: z.array(z.string()).optional(),
+      }),
+    ),
+    async (c) => {
+      const user = c.get('user')
+      const teamId = c.req.param('teamId')
+      const req = c.req.valid('json')
+
+      await authzService.hasPermission({
+        user,
+        permission: Permission.Admin,
+        type: ResourceType.Team,
+        id: teamId,
+      })
+
+      const created = await teamService.createMember(teamId, {
+        name: req.name,
+        email: req.email,
+        password: req.password,
+        role: req.role,
+        scope: req.scope,
+        projectIds: req.projectIds,
+      })
+
+      await auditLogService.logAction({
+        action: AuditAction.team_member_add,
+        teamId,
+        userId: user.id,
+        itemId: created.id,
+      })
+
+      return c.json({ id: created.id }, 201)
+    },
+  )
   .get('/teams/:teamId/settings', async (c) => {
     const user = c.get('user')
     const teamId = c.req.param('teamId')

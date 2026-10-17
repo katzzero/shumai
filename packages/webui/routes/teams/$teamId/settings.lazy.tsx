@@ -78,6 +78,7 @@ type SettingsTab =
   | 'sandbox'
   | 'notifications'
   | 'developer'
+  | 'members'
 
 const VALID_SETTINGS_TABS: readonly SettingsTab[] = [
   'general',
