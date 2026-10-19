@@ -2,14 +2,29 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { agentAutofillMedia } from './agent-autofill'
 import { prisma } from '@shumai/db'
 import { setupTestDbHooks } from '@shumai/db/test'
-import * as workflowUtils from '@shumai/workflow-core'
+import * as workflowCore from '@shumai/workflow-core'
+import * as agentActivities from '../activities/agent'
 
 vi.mock('@shumai/workflow-core', async () => {
   const actual = await vi.importActual('@shumai/workflow-core')
   return {
     ...actual,
-    getActivities: vi.fn(),
-    executeActivity: vi.fn(),
+    updateTaskStatusActivity: vi.fn(),
+    updateTaskUsageActivity: vi.fn(),
+  }
+})
+
+vi.mock('../activities/agent', async () => {
+  const actual = await vi.importActual('../activities/agent')
+  return {
+    ...actual,
+    getAssetActivity: vi.fn(),
+    getProjectAutofillFieldsActivity: vi.fn(),
+    getAgentAutofillContextActivity: vi.fn(),
+    autofillAiActivity: vi.fn(),
+    updateAssetMetadataActivity: vi.fn(),
+    createCommentActivity: vi.fn(),
+    updateCommentActivity: vi.fn(),
   }
 })
 
@@ -23,32 +38,17 @@ describe('Agent Autofill Workflow', () => {
     vi.clearAllMocks()
 
     mockActivities = {
-      updateTaskStatusActivity: Object.assign(vi.fn(), {
-        _activityName: 'updateTaskStatusActivity',
-      }),
-      getAssetActivity: Object.assign(vi.fn(), { _activityName: 'getAssetActivity' }),
-      getProjectAutofillFieldsActivity: Object.assign(vi.fn(), {
-        _activityName: 'getProjectAutofillFieldsActivity',
-      }),
-      getAgentAutofillContextActivity: Object.assign(vi.fn(), {
-        _activityName: 'getAgentAutofillContextActivity',
-      }),
-      getAssetAutofillContextActivity: Object.assign(vi.fn(), {
-        _activityName: 'getAssetAutofillContextActivity',
-      }),
-      autofillAiActivity: Object.assign(vi.fn(), { _activityName: 'autofillAiActivity' }),
-      updateTaskUsageActivity: Object.assign(vi.fn(), { _activityName: 'updateTaskUsageActivity' }),
-      updateAssetMetadataActivity: Object.assign(vi.fn(), {
-        _activityName: 'updateAssetMetadataActivity',
-      }),
-      createCommentActivity: Object.assign(vi.fn(), { _activityName: 'createCommentActivity' }),
-      updateCommentActivity: Object.assign(vi.fn(), { _activityName: 'updateCommentActivity' }),
-      getAgentWorkerQueueActivity: Object.assign(vi.fn(), {
-        _activityName: 'getAgentWorkerQueueActivity',
-      }),
+      updateTaskStatusActivity: vi.mocked(workflowCore.updateTaskStatusActivity),
+      getAssetActivity: vi.mocked(agentActivities.getAssetActivity),
+      getProjectAutofillFieldsActivity: vi.mocked(agentActivities.getProjectAutofillFieldsActivity),
+      getAgentAutofillContextActivity: vi.mocked(agentActivities.getAgentAutofillContextActivity),
+      autofillAiActivity: vi.mocked(agentActivities.autofillAiActivity),
+      updateTaskUsageActivity: vi.mocked(workflowCore.updateTaskUsageActivity),
+      updateAssetMetadataActivity: vi.mocked(agentActivities.updateAssetMetadataActivity),
+      createCommentActivity: vi.mocked(agentActivities.createCommentActivity),
+      updateCommentActivity: vi.mocked(agentActivities.updateCommentActivity),
     }
 
-    mockActivities.getAgentWorkerQueueActivity.mockResolvedValue('agent_queue')
     mockActivities.updateTaskStatusActivity.mockResolvedValue({})
     mockActivities.createCommentActivity.mockResolvedValue({ id: 'comment-placeholder-id' })
     mockActivities.getAssetActivity.mockResolvedValue({
@@ -69,13 +69,6 @@ describe('Agent Autofill Workflow', () => {
       sessionId: 'session-123',
       usage: { inputTokens: 10, outputTokens: 15, model: 'gemini-model' },
     })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mockActivities contains vi.fn mock functions which are cast to expected activity proxy types
-    vi.mocked(workflowUtils.getActivities).mockReturnValue(mockActivities as any)
-    vi.mocked(workflowUtils.executeActivity).mockImplementation(async (_queue, act, ...args) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- act is one of the mocked activities
-      return (act as any)(...args)
-    })
   })
 
   it('should run agent autofill workflow successfully', async () => {
@@ -92,9 +85,6 @@ describe('Agent Autofill Workflow', () => {
     })
 
     await agentAutofillMedia(task)
-
-    // Verify queue discovery
-    expect(mockActivities.getAgentWorkerQueueActivity).toHaveBeenCalled()
 
     // Verify task processing status
     expect(mockActivities.updateTaskStatusActivity).toHaveBeenCalledWith({
