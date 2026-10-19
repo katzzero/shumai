@@ -1,11 +1,15 @@
 import type { WorkflowTask } from '@shumai/db'
 import '@shumai/db/src/prisma-json-types'
-import { executeActivity, getActivities } from '@shumai/workflow-core'
-import { ApplicationFailure } from '@temporalio/workflow'
-import { getWorkerQueueAndStartTask, completeTask, failTask } from './common'
+import { ApplicationFailure } from '@shumai/workflow-core'
+import {
+  initWatermarkFileActivity,
+  waitForWatermarkFileActivity,
+  transcodeWatermarkMediaActivity,
+  completeWatermarkFileActivity,
+} from '../activities/watermark'
+import { startTask, completeTask, failTask } from './common'
 
 export async function transcodeWatermarkWorkflow(task: WorkflowTask): Promise<void> {
-  let workerQueue = ''
   const watermarkConfigId = task.payload?.watermark?.watermarkConfigId
   const shareLinkId = task.payload?.watermark?.shareLinkId
 
@@ -17,30 +21,23 @@ export async function transcodeWatermarkWorkflow(task: WorkflowTask): Promise<vo
   }
 
   try {
-    workerQueue = await getWorkerQueueAndStartTask(task)
+    await startTask(task)
 
-    const {
-      initWatermarkFileActivity,
-      waitForWatermarkFileActivity,
-      transcodeWatermarkMediaActivity,
-      completeWatermarkFileActivity,
-    } = getActivities()
-
-    const initResult = await executeActivity(workerQueue, initWatermarkFileActivity, {
+    const initResult = await initWatermarkFileActivity({
       assetId: task.assetId,
       watermarkConfigId,
     })
 
     if (initResult.action === 'completed') {
       if (shareLinkId) {
-        await executeActivity(workerQueue, completeWatermarkFileActivity, {
+        await completeWatermarkFileActivity({
           assetId: task.assetId,
           watermarkConfigId,
           status: 'completed',
           shareLinkId,
         })
       }
-      await completeTask(workerQueue, task.id)
+      await completeTask(task.id)
       return
     }
 
@@ -52,21 +49,21 @@ export async function transcodeWatermarkWorkflow(task: WorkflowTask): Promise<vo
     }
 
     if (initResult.action === 'processing') {
-      const waitResult = await executeActivity(workerQueue, waitForWatermarkFileActivity, {
+      const waitResult = await waitForWatermarkFileActivity({
         assetId: task.assetId,
         watermarkConfigId,
       })
 
       if (waitResult.status === 'completed') {
         if (shareLinkId) {
-          await executeActivity(workerQueue, completeWatermarkFileActivity, {
+          await completeWatermarkFileActivity({
             assetId: task.assetId,
             watermarkConfigId,
             status: 'completed',
             shareLinkId,
           })
         }
-        await completeTask(workerQueue, task.id)
+        await completeTask(task.id)
         return
       }
 
@@ -76,12 +73,12 @@ export async function transcodeWatermarkWorkflow(task: WorkflowTask): Promise<vo
       })
     }
 
-    const mediaInfo = await executeActivity(workerQueue, transcodeWatermarkMediaActivity, {
+    const mediaInfo = await transcodeWatermarkMediaActivity({
       assetId: task.assetId,
       watermarkConfigId,
     })
 
-    await executeActivity(workerQueue, completeWatermarkFileActivity, {
+    await completeWatermarkFileActivity({
       assetId: task.assetId,
       watermarkConfigId,
       mediaInfo,
@@ -89,12 +86,11 @@ export async function transcodeWatermarkWorkflow(task: WorkflowTask): Promise<vo
       shareLinkId,
     })
 
-    await completeTask(workerQueue, task.id)
+    await completeTask(task.id)
   } catch (err) {
-    if (workerQueue && watermarkConfigId) {
-      const { completeWatermarkFileActivity } = getActivities()
+    if (watermarkConfigId) {
       try {
-        await executeActivity(workerQueue, completeWatermarkFileActivity, {
+        await completeWatermarkFileActivity({
           assetId: task.assetId,
           watermarkConfigId,
           status: 'failed',
@@ -104,7 +100,7 @@ export async function transcodeWatermarkWorkflow(task: WorkflowTask): Promise<vo
         console.error('Failed to update watermark file status to failed:', e)
       }
     }
-    await failTask(workerQueue, task.id, err)
+    await failTask(task.id, err)
     throw err
   }
 }

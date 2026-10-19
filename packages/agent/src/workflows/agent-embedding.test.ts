@@ -2,14 +2,39 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { agentEmbeddingMedia } from './agent-embedding'
 import { prisma } from '@shumai/db'
 import { setupTestDbHooks } from '@shumai/db/test'
-import * as workflowUtils from '@shumai/workflow-core'
+import * as workflowCore from '@shumai/workflow-core'
+import * as agentActivities from '../activities/agent'
+import * as aiActivities from '../activities/ai'
 
 vi.mock('@shumai/workflow-core', async () => {
   const actual = await vi.importActual('@shumai/workflow-core')
   return {
     ...actual,
-    getActivities: vi.fn(),
-    executeActivity: vi.fn(),
+    updateTaskStatusActivity: vi.fn(),
+    updateTaskUsageActivity: vi.fn(),
+  }
+})
+
+vi.mock('../activities/agent', async () => {
+  const actual = await vi.importActual('../activities/agent')
+  return {
+    ...actual,
+    createCommentActivity: vi.fn(),
+    updateCommentActivity: vi.fn(),
+  }
+})
+
+vi.mock('../activities/ai', async () => {
+  const actual = await vi.importActual('../activities/ai')
+  return {
+    ...actual,
+    getEmbeddingContextActivity: vi.fn(),
+    generateImageEmbeddingActivity: vi.fn(),
+    generateVideoChunkEmbeddingActivity: vi.fn(),
+    saveAssetEmbeddingsActivity: vi.fn(),
+    deleteAssetEmbeddingsActivity: vi.fn(),
+    transcodeVideoChunkActivity: vi.fn(),
+    deleteS3ObjectActivity: vi.fn(),
   }
 })
 
@@ -23,49 +48,23 @@ describe('Agent Embedding Workflow', () => {
     vi.clearAllMocks()
 
     mockActivities = {
-      updateTaskStatusActivity: Object.assign(vi.fn(), {
-        _activityName: 'updateTaskStatusActivity',
-      }),
-      getEmbeddingContextActivity: Object.assign(vi.fn(), {
-        _activityName: 'getEmbeddingContextActivity',
-      }),
-      generateImageEmbeddingActivity: Object.assign(vi.fn(), {
-        _activityName: 'generateImageEmbeddingActivity',
-      }),
-      generateVideoChunkEmbeddingActivity: Object.assign(vi.fn(), {
-        _activityName: 'generateVideoChunkEmbeddingActivity',
-      }),
-      saveAssetEmbeddingsActivity: Object.assign(vi.fn(), {
-        _activityName: 'saveAssetEmbeddingsActivity',
-      }),
-      deleteAssetEmbeddingsActivity: Object.assign(vi.fn(), {
-        _activityName: 'deleteAssetEmbeddingsActivity',
-      }),
-      updateTaskUsageActivity: Object.assign(vi.fn(), { _activityName: 'updateTaskUsageActivity' }),
-      createCommentActivity: Object.assign(vi.fn(), { _activityName: 'createCommentActivity' }),
-      updateCommentActivity: Object.assign(vi.fn(), { _activityName: 'updateCommentActivity' }),
-      getAgentWorkerQueueActivity: Object.assign(vi.fn(), {
-        _activityName: 'getAgentWorkerQueueActivity',
-      }),
-      getTranscodeWorkerQueueActivity: Object.assign(vi.fn(), {
-        _activityName: 'getTranscodeWorkerQueueActivity',
-      }),
-      downloadMediaToTmpActivity: Object.assign(vi.fn(), {
-        _activityName: 'downloadMediaToTmpActivity',
-      }),
-      cleanupTmpDirActivity: Object.assign(vi.fn(), {
-        _activityName: 'cleanupTmpDirActivity',
-      }),
-      transcodeVideoChunkActivity: Object.assign(vi.fn(), {
-        _activityName: 'transcodeVideoChunkActivity',
-      }),
-      deleteS3ObjectActivity: Object.assign(vi.fn(), {
-        _activityName: 'deleteS3ObjectActivity',
-      }),
+      updateTaskStatusActivity: vi.mocked(workflowCore.updateTaskStatusActivity),
+      getEmbeddingContextActivity: vi.mocked(aiActivities.getEmbeddingContextActivity),
+      generateImageEmbeddingActivity: vi.mocked(aiActivities.generateImageEmbeddingActivity),
+      generateVideoChunkEmbeddingActivity: vi.mocked(
+        aiActivities.generateVideoChunkEmbeddingActivity,
+      ),
+      saveAssetEmbeddingsActivity: vi.mocked(aiActivities.saveAssetEmbeddingsActivity),
+      deleteAssetEmbeddingsActivity: vi.mocked(aiActivities.deleteAssetEmbeddingsActivity),
+      updateTaskUsageActivity: vi.mocked(workflowCore.updateTaskUsageActivity),
+      createCommentActivity: vi.mocked(agentActivities.createCommentActivity),
+      updateCommentActivity: vi.mocked(agentActivities.updateCommentActivity),
+      downloadMediaToTmpActivity: vi.fn(),
+      cleanupTmpDirActivity: vi.fn(),
+      transcodeVideoChunkActivity: vi.mocked(aiActivities.transcodeVideoChunkActivity),
+      deleteS3ObjectActivity: vi.mocked(aiActivities.deleteS3ObjectActivity),
     }
 
-    mockActivities.getAgentWorkerQueueActivity.mockResolvedValue('agent_queue')
-    mockActivities.getTranscodeWorkerQueueActivity.mockResolvedValue('transcode_queue')
     mockActivities.updateTaskStatusActivity.mockResolvedValue({})
     mockActivities.createCommentActivity.mockResolvedValue({ id: 'comment-placeholder-id' })
     mockActivities.getEmbeddingContextActivity.mockResolvedValue({
@@ -99,13 +98,6 @@ describe('Agent Embedding Workflow', () => {
     )
     mockActivities.deleteS3ObjectActivity.mockResolvedValue(undefined)
     mockActivities.cleanupTmpDirActivity.mockResolvedValue(undefined)
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mockActivities contains vi.fn mock functions which are cast to expected activity proxy types
-    vi.mocked(workflowUtils.getActivities).mockReturnValue(mockActivities as any)
-    vi.mocked(workflowUtils.executeActivity).mockImplementation(async (_queue, act, ...args) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- act is one of the mocked activities
-      return (act as any)(...args)
-    })
   })
 
   it('should run agent embedding workflow successfully for image', async () => {
@@ -123,9 +115,6 @@ describe('Agent Embedding Workflow', () => {
     })
 
     await agentEmbeddingMedia(task)
-
-    // Verify queue discovery
-    expect(mockActivities.getAgentWorkerQueueActivity).toHaveBeenCalled()
 
     // Verify task processing status
     expect(mockActivities.updateTaskStatusActivity).toHaveBeenCalledWith({
@@ -306,9 +295,6 @@ describe('Agent Embedding Workflow', () => {
     })
 
     await agentEmbeddingMedia(task)
-
-    // Verify video transcode queue discovery
-    expect(mockActivities.getTranscodeWorkerQueueActivity).toHaveBeenCalled()
 
     // Verify video chunk slicing activity called 3 times on transcode queue
     expect(mockActivities.transcodeVideoChunkActivity).toHaveBeenCalledTimes(3)
