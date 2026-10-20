@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 * **transcode**: Fix an issue where PDF, 3D model, and image background transcode workflows could fail with missing temporary file errors if a worker restarted or recovered midway through processing
+* **webui**: Improve file list and detail loading with matching skeleton layouts, a persistent sidebar carousel to eliminate layout shift, and smoothed video poster previews
 
 ### Changed
 
