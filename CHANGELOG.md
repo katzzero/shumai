@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+### Fixed
+
+### Changed
+
+## [0.6.0] - 2026-10-20
+
+### Added
+
 * **deploy**: Add dedicated `shumaione/shumai-transcode` Docker image and a complete AWS EKS deployment example (`eks/`) featuring KEDA queue-driven autoscaling, idle-timeout auto-drain worker mode, and Scale-to-Zero On-Demand Graviton5 instances for media processing
 * **storage**: Support configuring a separate public endpoint (`AWS_PUBLIC_ENDPOINT_URL_S3`) for browser-facing presigned URLs while preserving internal cluster endpoints for backend workers
 
