@@ -8,10 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+### Fixed
+
+### Changed
+
+## [0.6.0] - 2026-10-20
+
+### Added
+
 * **deploy**: Add dedicated `shumaione/shumai-transcode` Docker image and a complete AWS EKS deployment example (`eks/`) featuring KEDA queue-driven autoscaling, idle-timeout auto-drain worker mode, and Scale-to-Zero On-Demand Graviton5 instances for media processing
 * **storage**: Support configuring a separate public endpoint (`AWS_PUBLIC_ENDPOINT_URL_S3`) for browser-facing presigned URLs while preserving internal cluster endpoints for backend workers
 
 ### Fixed
+
+* **transcode**: Fix an issue where PDF, 3D model, and image background transcode workflows could fail with missing temporary file errors if a worker restarted or recovered midway through processing
+* **webui**: Improve file list and detail loading with matching skeleton layouts, a persistent sidebar carousel to eliminate layout shift, and smoothed video poster previews
 
 ### Changed
 

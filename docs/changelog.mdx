@@ -3,6 +3,24 @@ title: "Changelog"
 description: "Recent updates, new features, and improvements in Shumai"
 ---
 
+<Update label="v0.6.0" description="October 20, 2026">
+
+### Added
+
+* **deploy**: Add dedicated `shumaione/shumai-transcode` Docker image and a complete AWS EKS deployment example (`eks/`) featuring KEDA queue-driven autoscaling, idle-timeout auto-drain worker mode, and Scale-to-Zero On-Demand Graviton5 instances for media processing
+* **storage**: Support configuring a separate public endpoint (`AWS_PUBLIC_ENDPOINT_URL_S3`) for browser-facing presigned URLs while preserving internal cluster endpoints for backend workers
+
+### Fixed
+
+* **transcode**: Fix an issue where PDF, 3D model, and image background transcode workflows could fail with missing temporary file errors if a worker restarted or recovered midway through processing
+* **webui**: Improve file list and detail loading with matching skeleton layouts, a persistent sidebar carousel to eliminate layout shift, and smoothed video poster previews
+
+### Changed
+
+* **workflow**: Migrate the background workflow engine to DBOS, unifying all-in-one and dedicated worker deployments using the existing PostgreSQL database without requiring a separate Temporal cluster
+
+</Update>
+
 <Update label="v0.5.3" description="October 16, 2026">
 
 ### Added
