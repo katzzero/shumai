@@ -70,7 +70,9 @@ The ultimate goal is an **agentic Kanban**, where agents and team members can wo
 > * **For Images:** Shumai generates a high-quality WebP proxy at the exact same resolution as your original file for optimized viewing.
 > * **For Videos:** It generates at least one proxy video (depending on your transcoding settings), alongside a sprite image and a small preview video (capped at 1600 frames) to enable fast timeline scrubbing and lightning-quick previews.
 
----
+Have feedback or ideas? [Share them with us](https://github.com/shumaiOne/shumai/issues/328), and if you find Shumai useful, please give us a ⭐ or recommend Shumai to someone who might find it useful, it really helps!
+
+
 
 ## Installation
 
