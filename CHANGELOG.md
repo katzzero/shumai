@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+### Fixed
+
+### Changed
+
+## [0.6.1] - 2026-10-24
+
+### Added
+
 * **dashboard**: Add Workflow Tasks section to the Team Dashboard allowing team owners to monitor background workflow jobs, inspect execution payloads and outputs, and stop in-flight tasks
 
 ### Fixed
