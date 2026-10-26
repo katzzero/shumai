@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+* **agent**: Fix an issue where an agent could read a comment thread from a project or team the user doesn't have access to by referencing its ID
+* **agent**: Fix an issue where an agent creating a file or a new version in a folder the user can't edit still uploaded the file to storage before the request was rejected
+
 ### Changed
 
 * **api-token**: API tokens are now stored securely, so they can no longer be read back from the database. A new token is shown only once when you create it, so copy it right away; the token list now shows just the last few characters. Existing tokens keep working without any changes.
