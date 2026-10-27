@@ -19,6 +19,7 @@ describe('operation registry', () => {
     expect(operationDefinitions.map((d) => d.name).sort()).toEqual([
       'create_folder',
       'delete_asset',
+      'download_asset',
       'get_asset_render',
       'list_assets',
       'list_projects',
@@ -36,6 +37,10 @@ describe('operation registry', () => {
   it('filters definitions by surface', () => {
     const cli = getOperationDefinitionsForSurface('cli').map((d) => d.name)
     expect(cli).toContain('list_assets')
+    expect(cli).toContain('read_asset')
+    expect(getOperationDefinitionsForSurface('mcp').map((d) => d.name)).toContain(
+      'get_asset_render',
+    )
   })
 
   it('annotates only delete_asset as destructive', () => {
@@ -43,6 +48,7 @@ describe('operation registry', () => {
     expect(destructive.map((d) => d.name)).toEqual(['delete_asset'])
     const readOnly = operationDefinitions.filter((d) => d.annotations.readOnly)
     expect(readOnly.map((d) => d.name).sort()).toEqual([
+      'download_asset',
       'get_asset_render',
       'list_assets',
       'list_projects',
@@ -66,6 +72,18 @@ describe('operation registry', () => {
     },
   )
 
+  it.each(operationDefinitions.map((d) => [d.name, d] as const))(
+    '%s input schema has no nullable types',
+    (_name, definition) => {
+      // Tool formats like Gemini's function declarations (an OpenAPI subset) can't express
+      // `type: [..., "null"]` or a `null` branch, so inputs use optional fields instead.
+      // Surfaces drop nulls that models send for optional fields (dropNullOptionals).
+      const schema = JSON.stringify(z.toJSONSchema(definition.input, { io: 'input' }))
+      expect(schema).not.toMatch(/"type":\[/)
+      expect(schema).not.toContain('"type":"null"')
+    },
+  )
+
   it('keeps legacy CLI invocations mapped', () => {
     const commands = operationDefinitions.map((d) => [
       d.name,
@@ -78,9 +96,9 @@ describe('operation registry', () => {
       ['rename_asset', ['rename']],
       ['move_assets', ['move', 'mv']],
       ['delete_asset', ['delete', 'rm']],
-      // CLI commands for reading assets arrive with the CLI surface
-      ['read_asset', []],
-      ['get_asset_render', []],
+      ['read_asset', ['read']],
+      ['get_asset_render', ['render']],
+      ['download_asset', ['download']],
     ])
   })
 

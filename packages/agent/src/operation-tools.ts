@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { TSchema } from 'typebox'
 import { Compile } from 'typebox/compile'
 import { type AgentTool, type AgentToolResult } from '@earendil-works/pi-agent-core'
+import { dropNullOptionals } from '@shumai/operations'
 import {
   getOperationsForSurface,
   runOperation,
@@ -18,10 +19,27 @@ export type AgentOperationContext = Omit<OperationContext, 'via'>
  * and render the output (e.g. as image blocks).
  */
 export interface AgentToolExtension {
+  /** Replaces the Operation description for the agent (e.g. where files end up). */
+  description?: string
   /** Extra parameters only the agent sees; they are removed before the Operation runs. */
   extraParameters?: z.ZodObject
+  /**
+   * Agent-facing versions of Operation input fields, e.g. a required field made optional
+   * because an extra parameter can be used instead. The Operation still validates its own
+   * input when it runs.
+   */
+  parameterOverrides?: z.ZodObject
   /** Adjust the Operation input using the extra parameters. */
   toInput?(input: Record<string, unknown>, extra: Record<string, unknown>): Record<string, unknown>
+  /**
+   * Handle an agent-only mode without running the Operation (e.g. a storage key instead of
+   * an asset). Return undefined to run the Operation.
+   */
+  intercept?(
+    input: Record<string, unknown>,
+    extra: Record<string, unknown>,
+    ctx: AgentOperationContext,
+  ): Promise<AgentToolResult<unknown> | undefined>
   present(output: unknown, extra: Record<string, unknown>): Promise<AgentToolResult<unknown>>
 }
 
@@ -33,9 +51,10 @@ export function registerAgentToolExtension(name: string, extension: AgentToolExt
 }
 
 function toolInputSchema(op: Operation, extension?: AgentToolExtension): z.ZodObject {
-  return extension?.extraParameters
-    ? op.definition.input.extend(extension.extraParameters.shape)
-    : op.definition.input
+  let schema = op.definition.input
+  if (extension?.parameterOverrides) schema = schema.extend(extension.parameterOverrides.shape)
+  if (extension?.extraParameters) schema = schema.extend(extension.extraParameters.shape)
+  return schema
 }
 
 /**
@@ -53,27 +72,13 @@ export function toToolParameters(op: Operation, extension?: AgentToolExtension):
   return schema as unknown as TSchema
 }
 
-/**
- * Models sometimes send `null` for optional parameters they don't want to set. Drop those
- * so the input schema treats them as omitted; nulls for required fields still fail.
- */
-export function dropNullOptionalFields(schema: z.ZodObject, params: unknown): unknown {
-  if (!params || typeof params !== 'object' || Array.isArray(params)) return params
-  const shape = schema.shape
-  return Object.fromEntries(
-    Object.entries(params).filter(
-      ([key, value]) => !(value === null && shape[key]?.safeParse(undefined).success),
-    ),
-  )
-}
-
 /** Split agent-only parameters from the Operation input. */
 export function splitAgentParams(
   op: Operation,
   extension: AgentToolExtension | undefined,
   params: unknown,
 ): { input: unknown; extra: Record<string, unknown> } {
-  const cleaned = dropNullOptionalFields(toolInputSchema(op, extension), params)
+  const cleaned = dropNullOptionals(toolInputSchema(op, extension), params)
   if (!extension?.extraParameters || !cleaned || typeof cleaned !== 'object') {
     return { input: cleaned, extra: {} }
   }
@@ -93,10 +98,14 @@ export function toAgentTool(op: Operation, ctx: AgentOperationContext): AgentToo
   return {
     name: definition.name,
     label: definition.title,
-    description: definition.description,
+    description: extension?.description ?? definition.description,
     parameters: toToolParameters(op, extension),
     execute: async (_toolCallId, params) => {
       const { input, extra } = splitAgentParams(op, extension, params)
+      if (extension?.intercept) {
+        const handled = await extension.intercept(input as Record<string, unknown>, extra, ctx)
+        if (handled) return handled
+      }
       const output = await runOperation(op, { ...ctx, via: 'agent' }, input)
       if (extension) {
         return extension.present(output, extra)

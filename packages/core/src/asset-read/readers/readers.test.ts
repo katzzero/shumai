@@ -122,6 +122,16 @@ describe('videoReader', () => {
     })
   })
 
+  it('rounds frame timestamps in labels', () => {
+    const result = videoReader.collect!(
+      video,
+      { start: 0, end: 8, count: 3 },
+      { screenshots: [{ key: 's/1.webp', timestamp: 2.6666666666666665 }] },
+      {},
+    )
+    expect(result.images[0].label).toBe('Frame at 2.667s')
+  })
+
   it('fails when the render produced no frames', () => {
     expect(() =>
       videoReader.collect!(video, { start: 0, end: 1, count: 1 }, { screenshots: [] }, {}),
@@ -140,11 +150,9 @@ describe('model3dReader', () => {
     } as unknown as PrismaJson.MediaInfo,
   })
 
-  it('accepts null as "show the overview"', async () => {
-    expect(() =>
-      model3dReader.validate(model, { degree: null }, { hasAnnotation: false }),
-    ).not.toThrow()
-    const plan = await model3dReader.plan(model, { degree: null }, noAnnotation)
+  it('shows the overview when no degree is given', async () => {
+    expect(() => model3dReader.validate(model, {}, { hasAnnotation: false })).not.toThrow()
+    const plan = await model3dReader.plan(model, {}, noAnnotation)
     expect(plan.status).toBe('ready')
   })
 

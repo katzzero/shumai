@@ -11,7 +11,13 @@ import { authzService, Permission, ResourceType } from '@shumai/core/src/authz/a
 import { s3Service } from '@shumai/core/src/s3/s3'
 import { resolveAnnotationsById } from './annotations'
 import { findReader, getReader, readers } from './registry'
-import { badRequest, storageBucket, type ReadableAsset, type ReadResult } from './types'
+import {
+  badRequest,
+  storageBucket,
+  UnsupportedAssetTypeError,
+  type ReadableAsset,
+  type ReadResult,
+} from './types'
 
 /** Who is reading: a user (Read permission required) or the autofill system agent. */
 export type ReadAccess =
@@ -81,9 +87,7 @@ export class AssetReadService {
 
     const reader = findReader(asset)
     if (!reader) {
-      throw badRequest(
-        `Unsupported asset type for read_asset. Asset ${asset.id} has media type "${asset.mediaTypeLower || 'unknown'}". Use download_asset to download this file to disk.`,
-      )
+      throw new UnsupportedAssetTypeError(asset.id, asset.mediaTypeLower)
     }
 
     // Reject configs meant for another type (empty objects like `imageConfig: {}` are ignored).
@@ -265,8 +269,8 @@ export class AssetReadService {
 export const assetReadService = new AssetReadService()
 
 /**
- * Converts a read outcome into the Operation output. Storage keys are included only for
- * Shumai's built-in agent; every image gets a short-lived link.
+ * Converts a read outcome into the Operation output. Every image gets a short-lived link;
+ * storage keys (and the source file link) only when the result is presented server-side.
  */
 export async function toAssetReadOutput(
   outcome: ReadOutcome,
