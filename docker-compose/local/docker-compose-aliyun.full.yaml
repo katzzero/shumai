@@ -25,7 +25,7 @@ services:
     restart: unless-stopped
 
   gotenberg:
-    image: gotenberg/gotenberg:8
+    image: docker.m.daocloud.io/gotenberg/gotenberg:8
     container_name: shumai_gotenberg
     restart: unless-stopped
 
