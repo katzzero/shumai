@@ -233,3 +233,9 @@ For more details on installation and usage, see the [CLI Readme](apps/cli/README
 ## MCP Server
 
 Shumai includes a built-in MCP server at `/mcp`, so external agents such as Claude Code, Cursor, or Kiro can browse and organize your projects with an API token. See the [MCP server guide](docs/developer/mcp-server.mdx) for setup.
+
+---
+
+## Community
+
+Thanks to [LINUX DO](https://linux.do/) for providing a community for open-source discussions and feedback.
