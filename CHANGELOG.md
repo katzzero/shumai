@@ -8,14 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-* **mcp**: Shumai now has a built-in MCP server at `https://<your-shumai-host>/mcp`, supporting both OAuth 2.1 with Dynamic Client Registration and API token authentication, so external AI agents such as Claude Code, Cursor, or Kiro can browse projects and create, rename, move, or delete folders and files with your permissions. Like other MCP servers, it can also be served from its own host name, such as `https://mcp.example.com/mcp`
-* **agent**: The built-in agent can now list the projects you have access to, so it can find a project's root folder on its own. Team owners can turn this off per agent like other tools
-* **mcp**: External AI agents connected to Shumai's MCP server can now look at your files: images, video frames, PDF pages, 3D model views, and text files. Images are attached so the AI can see them, along with links that stay valid for about an hour. They can also get download links for files, as the web preview or the original upload
-* **cli**: New `shumai-cli download` command saves files to your computer, up to 50 at a time: the smaller web preview by default, or the original upload with `--original`
-* **cli**: New `shumai-cli read` command shows an image, video frames, PDF pages, a 3D model view, or the text of a file, and `--out` downloads the images into a folder. If rendering takes a while, `shumai-cli render <taskId>` picks up the result later
-* **agent**: The built-in agent can now work more like a teammate: it can search for files by name, meaning, or metadata, read and post review comments (as you) and mark them resolved, set metadata such as a file's status, copy files, stack files into versions or take a version out of its stack, and read a folder's instructions for AI agents (AGENTS.md). Team owners can turn each of these off per agent
-* **mcp**: External AI agents connected to Shumai's MCP server can do the same, and can now upload files and new versions: Shumai gives them a link to upload the file to, then creates the file once it's uploaded. They can also fill in a project's Creation Context fields (such as the prompt or model used) for the files they create
-* **cli**: New `shumai-cli` commands to search files (`search`), copy them (`copy`), work with comments (`comment ls`, `comment add`, `comment resolve`), list and set metadata (`field ls`, `meta set`), manage versions (`version stack`, `version ls`, `version unstack`), and show a folder's instructions (`instructions`)
+* **mcp**: Add a built-in MCP server supporting OAuth 2.1 and API tokens, allowing external AI agents (such as Claude Code, Cursor, or Kiro) to browse projects, manage and upload files, inspect media contents (images, video frames, PDF pages, 3D models, and text), search assets, manage review comments, update metadata, and organize version stacks
+* **cli**: Add `shumai-cli` commands to download files (`download`), view and render media contents (`read`, `render`), search and copy files (`search`, `copy`), manage review comments (`comment`), view and update metadata (`field ls`, `meta set`), organize version stacks (`version`), and view folder instructions (`instructions`)
+* **agent**: The built-in agent can now list accessible projects, search files by name, meaning, or metadata, read and post review comments, update metadata, copy files, stack and unstack versions, and read folder instructions (`AGENTS.md`), with configurable permissions per agent
 
 ### Fixed
 

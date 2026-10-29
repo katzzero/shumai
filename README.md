@@ -234,7 +234,7 @@ For more details on installation and usage, see the [CLI Readme](apps/cli/README
 
 ## MCP Server
 
-Shumai includes a built-in MCP server at `/mcp`, so external agents such as Claude Code, Cursor, or Kiro can browse and organize your projects with an API token. See the [MCP server guide](docs/developer/mcp-server.mdx) for setup.
+Shumai includes a built-in MCP server at `/mcp`, so external agents such as Claude Code, Cursor, or Kiro can browse and organize your projects with OAuth or an API token. See the [MCP server guide](docs/developer/mcp-server.mdx) for setup.
 
 ---
 
