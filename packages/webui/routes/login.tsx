@@ -4,7 +4,7 @@ import { Button } from '@/ui/components/ui/button'
 import { ShumaiLogo } from '@/ui/components/ui/icons'
 import { Input } from '@/ui/components/ui/input'
 import { Label } from '@/ui/components/ui/label'
-import { signIn } from '@/ui/lib/auth-client'
+import { getAuthSession, signIn } from '@/ui/lib/auth-client'
 import { useAuthStore } from '@/ui/stores/auth'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
@@ -44,6 +44,16 @@ function LoginPage() {
     }
   }, [signupInfo, navigate])
 
+  useEffect(() => {
+    const user = useAuthStore.getState().user
+    if (user && typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search)
+      if (searchParams.has('client_id')) {
+        window.location.href = `/api/auth/oauth2/authorize?${searchParams.toString()}`
+      }
+    }
+  }, [])
+
   const isDemoEnv = signupInfo?.demoMode === true
 
   const form = useForm<LoginSchema>({
@@ -65,7 +75,23 @@ function LoginPage() {
     }
 
     if (session) {
-      setUser(session.user)
+      const redirectUrl = (session as { url?: string }).url
+      if (redirectUrl) {
+        try {
+          const sessionData = await getAuthSession()
+          if (sessionData?.data?.user) {
+            setUser(sessionData.data.user)
+          }
+        } catch {
+          // Ignore and continue redirect
+        }
+        window.location.href = redirectUrl
+        return
+      }
+
+      if ('user' in session && session.user) {
+        setUser(session.user)
+      }
       navigate({ to: '/' })
     }
   }
@@ -89,7 +115,23 @@ function LoginPage() {
     }
 
     if (session) {
-      setUser(session.user)
+      const redirectUrl = (session as { url?: string }).url
+      if (redirectUrl) {
+        try {
+          const sessionData = await getAuthSession()
+          if (sessionData?.data?.user) {
+            setUser(sessionData.data.user)
+          }
+        } catch {
+          // Ignore and continue redirect
+        }
+        window.location.href = redirectUrl
+        return
+      }
+
+      if ('user' in session && session.user) {
+        setUser(session.user)
+      }
       navigate({ to: '/' })
     }
   }
@@ -245,6 +287,12 @@ function LoginPage() {
 export const Route = createFileRoute('/login')({
   component: LoginPage,
   beforeLoad: () => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search)
+      if (searchParams.has('client_id')) {
+        return
+      }
+    }
     if (useAuthStore.getState().user) {
       throw redirect({
         to: '/',
