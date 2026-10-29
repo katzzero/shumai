@@ -106,10 +106,20 @@ Docker Compose is the fastest way to get Shumai running. You do not need to clon
 
    > [!NOTE]
    > By default, the Docker Compose setups use CPU software transcoding. If your server has a GPU (NVIDIA NVENC, Intel QuickSync, AMD/Intel VA-API, or Rockchip RKMPP) and you want to enable GPU hardware acceleration, check the [Hardware Transcoding Guide](https://docs.shumai.one/configuration/hardware-transcoding).
-3. Configure environment variables (optional):
+3. Configure environment variables:
 
-   * `SHUMAI_SERVER_PORT` controls the port the Shumai server listens on. The default is `3000`.
-   * By default, Shumai uses the bundled local storage service in this Docker Compose setup. To use an external S3-compatible storage instead, configure the environment variables for your S3 provider. Here are examples for AWS S3 and Cloudflare R2:
+   * `BETTER_AUTH_URL`: The public base URL of your Shumai server (e.g., `https://shumai.example.com` or `http://12.34.56.78:3000`). This is required for remote servers and production deployments.
+   * `AWS_ENDPOINT_URL_S3`: By default, `AWS_ENDPOINT_URL_S3` is set to `http://localhost:{SHUMAI_SERVER_PORT}`. When you use local storage (the default storage backend with `STORAGE_BACKEND: local`) and expose Shumai on a remote server, custom domain, or custom host/port combination, set `AWS_ENDPOINT_URL_S3` to the external URL that client browsers will use to upload and download files.
+
+     For example, if you change the port mapping in `docker-compose.yaml` from `3000:3000` to `12345:3000` and deploy on a server with IP address `12.34.56.78`, set:
+
+     ```yaml
+     AWS_ENDPOINT_URL_S3: http://12.34.56.78:12345
+     ```
+
+     This value must be reachable from client browsers and should include the externally exposed port.
+   * `SHUMAI_SERVER_PORT`: Controls the port the Shumai server listens on. The default is `3000`.
+   * **External S3 Storage**: By default, Shumai uses the bundled local storage service in this Docker Compose setup. To use an external S3-compatible storage instead, configure the environment variables for your S3 provider. Here are examples for AWS S3 and Cloudflare R2:
 
      **AWS S3 Example:**
      ```yaml
@@ -129,21 +139,12 @@ Docker Compose is the fastest way to get Shumai running. You do not need to clon
      S3_SECRET_ACCESS_KEY: your-secret-access-key
      AWS_ENDPOINT_URL_S3: https://<account-id>.r2.cloudflarestorage.com
      ```
-   * By default, `AWS_ENDPOINT_URL_S3` is set to: `http://localhost:{SHUMAI_SERVER_PORT}`, if you use local storage and expose Shumai on a custom host/port combination, set `AWS_ENDPOINT_URL_S3` to the external URL that browsers will use to upload files.
 
-     For example, if you change the port mapping in `docker-compose.yaml` from `3000:3000` to `12345:3000` and deploy on a server with IP address `12.34.56.78`, set:
-
-     ```
-     AWS_ENDPOINT_URL_S3: http://12.34.56.78:12345
-     ```
-
-     This value must be reachable from client browsers and should include the externally exposed port.
-
-5. Start the services in detached mode:
+4. Start the services in detached mode:
    ```bash
    docker compose up -d
    ```
-6. Open your browser and access Shumai at `http://localhost:3000` (or `http://<your-server-ip>:3000` for remote deployments).
+5. Open your browser and access Shumai at `http://localhost:3000` (or `http://<your-server-ip>:3000` for remote deployments).
 
 #### **Scaling Transcode Workers (Parallel Processing)**
 
@@ -200,6 +201,7 @@ To set up Shumai locally for development:
    ```env
    DATABASE_URL=postgresql://shumai:shumai_password@localhost:5432/shumai_db?schema=public
    BETTER_AUTH_SECRET=ySxs7DxzHDZBbeeHNPEwBuspYwipBqz5Gk5XdBjNhWw=
+   BETTER_AUTH_URL=http://localhost:3000
    STORAGE_BACKEND=local
    SHUMAI_SERVER_PORT=3000
    AWS_ENDPOINT_URL_S3=http://localhost:3000
