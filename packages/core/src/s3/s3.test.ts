@@ -40,6 +40,7 @@ describe('S3Service implementations', () => {
     vi.clearAllMocks()
     getSignedUrlSpy.mockReset()
     delete process.env.PRESIGNED_URL_EXPIRES_IN
+    delete process.env.PRESIGNED_UPLOAD_URL_EXPIRES_IN
     getSignedUrlSpy.mockResolvedValue('http://presigned-url')
     s3SendSpy.mockResolvedValue({})
   })
@@ -94,6 +95,43 @@ describe('S3Service implementations', () => {
       expect(getSignedUrlSpy).toHaveBeenCalledTimes(1)
     })
 
+    it('signs with an explicit lifetime and caches it separately from the default', async () => {
+      const s3 = new S3StorageService('http://localhost:9000', 'key', 'secret', 'test-bucket')
+      getSignedUrlSpy.mockClear()
+      getSignedUrlSpy.mockResolvedValueOnce('http://default-url')
+      getSignedUrlSpy.mockResolvedValueOnce('http://short-url')
+
+      const defaultUrl = await s3.presign('bucket', 'expiry-key', 'GET')
+      const shortUrl = await s3.presign(
+        'bucket',
+        'expiry-key',
+        'GET',
+        false,
+        undefined,
+        false,
+        3600,
+      )
+      const shortAgain = await s3.presign(
+        'bucket',
+        'expiry-key',
+        'GET',
+        false,
+        undefined,
+        false,
+        3600,
+      )
+
+      expect(defaultUrl).toBe('http://default-url')
+      expect(shortUrl).toBe('http://short-url')
+      expect(shortAgain).toBe('http://short-url')
+      expect(getSignedUrlSpy).toHaveBeenCalledTimes(2)
+      expect(getSignedUrlSpy).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.any(GetObjectCommand),
+        expect.objectContaining({ expiresIn: 3600 }),
+      )
+    })
+
     it('should NOT cache PUT presign URLs', async () => {
       const s3 = new S3StorageService('http://localhost:9000', 'key', 'secret', 'test-bucket')
 
@@ -109,7 +147,7 @@ describe('S3Service implementations', () => {
       expect(getSignedUrlSpy).toHaveBeenCalledTimes(2)
     })
 
-    it('should respect PRESIGNED_URL_EXPIRES_IN env', async () => {
+    it('should respect PRESIGNED_URL_EXPIRES_IN env for GET', async () => {
       process.env.PRESIGNED_URL_EXPIRES_IN = '10'
       const s3 = new S3StorageService('http://localhost:9000', 'key', 'secret', 'test-bucket')
 
@@ -120,6 +158,77 @@ describe('S3Service implementations', () => {
         expect.anything(),
         expect.any(GetObjectCommand),
         expect.objectContaining({ expiresIn: 10 * 3600 }),
+      )
+
+      delete process.env.PRESIGNED_URL_EXPIRES_IN
+      delete process.env.PRESIGNED_UPLOAD_URL_EXPIRES_IN
+    })
+
+    it('should default PUT presign and multipart to 12 hours (43200 seconds)', async () => {
+      const s3 = new S3StorageService('http://localhost:9000', 'key', 'secret', 'test-bucket')
+
+      getSignedUrlSpy.mockClear()
+      await s3.presign('bucket', 'key', 'PUT')
+      expect(getSignedUrlSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(PutObjectCommand),
+        expect.objectContaining({ expiresIn: 12 * 3600 }),
+      )
+
+      getSignedUrlSpy.mockClear()
+      await s3.presignMultipart('bucket', 'key', {
+        method: 'PUT',
+        key: 'key',
+        fileId: 'file-1',
+        uploadId: 'up-1',
+        partNumber: 1,
+      })
+      expect(getSignedUrlSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(UploadPartCommand),
+        expect.objectContaining({ expiresIn: 12 * 3600 }),
+      )
+    })
+
+    it('should respect PRESIGNED_UPLOAD_URL_EXPIRES_IN env for PUT and multipart', async () => {
+      process.env.PRESIGNED_UPLOAD_URL_EXPIRES_IN = '24'
+      process.env.PRESIGNED_URL_EXPIRES_IN = '5'
+      const s3 = new S3StorageService('http://localhost:9000', 'key', 'secret', 'test-bucket')
+
+      getSignedUrlSpy.mockClear()
+      await s3.presign('bucket', 'key', 'PUT')
+      expect(getSignedUrlSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(PutObjectCommand),
+        expect.objectContaining({ expiresIn: 24 * 3600 }),
+      )
+
+      getSignedUrlSpy.mockClear()
+      await s3.presignMultipart('bucket', 'key', {
+        method: 'PUT',
+        key: 'key',
+        fileId: 'file-1',
+      })
+      expect(getSignedUrlSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(PutObjectCommand),
+        expect.objectContaining({ expiresIn: 24 * 3600 }),
+      )
+
+      delete process.env.PRESIGNED_UPLOAD_URL_EXPIRES_IN
+      delete process.env.PRESIGNED_URL_EXPIRES_IN
+    })
+
+    it('should allow PRESIGNED_URL_EXPIRES_IN to override PUT if PRESIGNED_UPLOAD_URL_EXPIRES_IN is unset', async () => {
+      process.env.PRESIGNED_URL_EXPIRES_IN = '8'
+      const s3 = new S3StorageService('http://localhost:9000', 'key', 'secret', 'test-bucket')
+
+      getSignedUrlSpy.mockClear()
+      await s3.presign('bucket', 'key', 'PUT')
+      expect(getSignedUrlSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(PutObjectCommand),
+        expect.objectContaining({ expiresIn: 8 * 3600 }),
       )
 
       delete process.env.PRESIGNED_URL_EXPIRES_IN

@@ -12,7 +12,7 @@
   <a href="https://hub.docker.com/r/shumaione/shumai"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/shumaione/shumai" /></a>
   <a href="https://github.com/shumaiOne/shumai/releases"><img alt="GitHub latest release" src="https://img.shields.io/github/v/release/shumaiOne/shumai" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue" /></a>
-  <a target="_blank" href="https://deepwiki.com/shumaiOne/shumai"><img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg" /></a>
+  <a target="_blank" href="https://deepwiki.com/shumaiOne/shumai"><img alt="Ask DeepWiki" src="https://img.shields.io/badge/Ask-DeepWiki-6E56CF" /></a>
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@ Shumai is an open-source Frame.io alternative built for creative teams to collab
 * **Secure Sharing & Collections**: Create private share links and curated media collections for clients, stakeholders, and collaborators.
 * **Granular Access Control**: Manage workspace permissions with team-level and project-level role-based access control.
 * **Durable Workflows via DBOS**: Run background tasks and AI agent workflows orchestrated reliably by DBOS on PostgreSQL with automatic recovery and fault tolerance.
-* **Scalable Deployment on Kubernetes**: Horizontally autoscale video transcoding on multiple instances. See [EKS Deployment Example](eks/README.md).
+* **Scalable Deployment on Docker or Kubernetes**: Horizontally autoscale video transcoding on multiple instances. See [EKS Deployment Example](eks/README.md).
 * **Custom Asset Metadata**: Define dynamic metadata fields tailored to your production pipeline.
 * **Share Link Watermarking**: Protect shared media with customizable text and image watermarks, and save watermark as reusable templates.
 * **Wide File Format Support**: Preview common creative file formats, including images (with PSD support), videos, audio, and documents, while allowing any file type to be uploaded and stored.
@@ -38,6 +38,7 @@ Shumai is an open-source Frame.io alternative built for creative teams to collab
 * **Office & Document PDF Proxying via Gotenberg**: Convert Word, PowerPoint, Excel, Markdown, HTML, and CSV documents to high-quality PDF proxies for in-browser previewing using [Gotenberg](https://docs.shumai.one/using-shumai/gotenberg).
 * **Semantic Search**: Find assets by visual or conceptual meaning using vector embeddings. See [documentation](https://docs.shumai.one/using-shumai/semantic-search).
 * **NLE Export & Premiere Pro Plugin (Experimental)**: Export timestamped review comments to your favorite non-linear editor (Premiere Pro XML, DaVinci Resolve EDL, Final Cut Pro, Avid Media Composer) or use the experimental Premiere Pro UXP plugin to import media assets and auto-sync comments directly to sequence timeline markers. See [documentation](https://docs.shumai.one/using-shumai/nle-and-premiere).
+* **Built-in MCP Server & CLI**: Connect external AI agents to Shumai via `/mcp` or manage projects, assets, comments, and metadata from the terminal with `shumai-cli`.
 
 But Shumai goes beyond being a Frame.io alternative. With modern models like GPT-Image-2 and Seedance 2.5, AI can already handle a surprising amount of creative work. That means you can create or update videos and images from a simple prompt without having to jump back into Photoshop, Premiere or Houdini. That is why Shumai includes a powerful agent system:
 
@@ -70,7 +71,9 @@ The ultimate goal is an **agentic Kanban**, where agents and team members can wo
 > * **For Images:** Shumai generates a high-quality WebP proxy at the exact same resolution as your original file for optimized viewing.
 > * **For Videos:** It generates at least one proxy video (depending on your transcoding settings), alongside a sprite image and a small preview video (capped at 1600 frames) to enable fast timeline scrubbing and lightning-quick previews.
 
----
+Have feedback or ideas? [Share them with us](https://github.com/shumaiOne/shumai/issues/328), and if you find Shumai useful, please give us a ⭐ or recommend Shumai to someone who might find it useful, it really helps!
+
+
 
 ## Installation
 
@@ -103,10 +106,20 @@ Docker Compose is the fastest way to get Shumai running. You do not need to clon
 
    > [!NOTE]
    > By default, the Docker Compose setups use CPU software transcoding. If your server has a GPU (NVIDIA NVENC, Intel QuickSync, AMD/Intel VA-API, or Rockchip RKMPP) and you want to enable GPU hardware acceleration, check the [Hardware Transcoding Guide](https://docs.shumai.one/configuration/hardware-transcoding).
-3. Configure environment variables (optional):
+3. Configure environment variables:
 
-   * `SHUMAI_SERVER_PORT` controls the port the Shumai server listens on. The default is `3000`.
-   * By default, Shumai uses the bundled local storage service in this Docker Compose setup. To use an external S3-compatible storage instead, configure the environment variables for your S3 provider. Here are examples for AWS S3 and Cloudflare R2:
+   * `BETTER_AUTH_URL`: The public base URL of your Shumai server (e.g., `https://shumai.example.com` or `http://12.34.56.78:3000`). This is required for remote servers and production deployments.
+   * `AWS_ENDPOINT_URL_S3`: By default, `AWS_ENDPOINT_URL_S3` is set to `http://localhost:{SHUMAI_SERVER_PORT}`. When you use local storage (the default storage backend with `STORAGE_BACKEND: local`) and expose Shumai on a remote server, custom domain, or custom host/port combination, set `AWS_ENDPOINT_URL_S3` to the external URL that client browsers will use to upload and download files.
+
+     For example, if you change the port mapping in `docker-compose.yaml` from `3000:3000` to `12345:3000` and deploy on a server with IP address `12.34.56.78`, set:
+
+     ```yaml
+     AWS_ENDPOINT_URL_S3: http://12.34.56.78:12345
+     ```
+
+     This value must be reachable from client browsers and should include the externally exposed port.
+   * `SHUMAI_SERVER_PORT`: Controls the port the Shumai server listens on. The default is `3000`.
+   * **External S3 Storage**: By default, Shumai uses the bundled local storage service in this Docker Compose setup. To use an external S3-compatible storage instead, configure the environment variables for your S3 provider. Here are examples for AWS S3 and Cloudflare R2:
 
      **AWS S3 Example:**
      ```yaml
@@ -126,21 +139,44 @@ Docker Compose is the fastest way to get Shumai running. You do not need to clon
      S3_SECRET_ACCESS_KEY: your-secret-access-key
      AWS_ENDPOINT_URL_S3: https://<account-id>.r2.cloudflarestorage.com
      ```
-   * By default, `AWS_ENDPOINT_URL_S3` is set to: `http://localhost:{SHUMAI_SERVER_PORT}`, if you use local storage and expose Shumai on a custom host/port combination, set `AWS_ENDPOINT_URL_S3` to the external URL that browsers will use to upload files.
 
-     For example, if you change the port mapping in `docker-compose.yaml` from `3000:3000` to `12345:3000` and deploy on a server with IP address `12.34.56.78`, set:
-
-     ```
-     AWS_ENDPOINT_URL_S3: http://12.34.56.78:12345
-     ```
-
-     This value must be reachable from client browsers and should include the externally exposed port.
-
-5. Start the services in detached mode:
+4. Start the services in detached mode:
    ```bash
    docker compose up -d
    ```
-6. Open your browser and access Shumai at `http://localhost:3000` (or `http://<your-server-ip>:3000` for remote deployments).
+5. Open your browser and access Shumai at `http://localhost:3000` (or `http://<your-server-ip>:3000` for remote deployments).
+
+#### **Scaling Transcode Workers (Parallel Processing)**
+
+By default, the Docker Compose deployment transcodes videos one-by-one. This is by design, as video transcoding is compute-intensive and can saturate available CPU or GPU resources.
+
+However, when uploading large batches (e.g., 100+ videos at once) or massive raw camera files that take hours to process and block subsequent uploads, you can scale transcoding throughput across additional machines. Each machine still processes tasks sequentially, but adding more worker instances increases overall parallel capacity.
+
+Shumai makes this seamless with a dedicated [`shumaione/shumai-transcode`](https://hub.docker.com/r/shumaione/shumai-transcode) Docker image:
+
+1. **Connect**: Launch a temporary machine and ensure network access to your PostgreSQL database and storage backend (e.g., S3 or shared storage).
+2. **Start the worker**: Run the container with matching database and storage credentials:
+
+   ```bash
+   docker run -d --name shumai_transcode_worker \
+     -e DATABASE_URL="postgres://shumai:shumai_password@<postgres-host>:5432/shumai_db?sslmode=disable" \
+     -e STORAGE_BACKEND="s3" \
+     -e S3_BUCKET="your-bucket-name" \
+     -e AWS_ENDPOINT_URL_S3="https://s3.us-east-1.amazonaws.com" \
+     -e S3_ACCESS_KEY_ID="your-access-key-id" \
+     -e S3_SECRET_ACCESS_KEY="your-secret-access-key" \
+     shumaione/shumai-transcode:latest
+   ```
+
+   The worker will automatically attach to the task queue and begin processing pending transcode jobs in parallel with your primary instance.
+
+3. **Stop anytime**: Once the transcoding backlog finishes (or whenever you no longer need the extra compute), simply stop or remove the worker:
+
+   ```bash
+   docker stop shumai_transcode_worker
+   ```
+
+   There is no downtime or impact on the main Shumai application.
 
 ### Option 2: Run from Source (Development)
 
@@ -165,6 +201,7 @@ To set up Shumai locally for development:
    ```env
    DATABASE_URL=postgresql://shumai:shumai_password@localhost:5432/shumai_db?schema=public
    BETTER_AUTH_SECRET=ySxs7DxzHDZBbeeHNPEwBuspYwipBqz5Gk5XdBjNhWw=
+   BETTER_AUTH_URL=http://localhost:3000
    STORAGE_BACKEND=local
    SHUMAI_SERVER_PORT=3000
    AWS_ENDPOINT_URL_S3=http://localhost:3000
@@ -194,3 +231,13 @@ To set up Shumai locally for development:
 Shumai provides a Command Line Interface (CLI) tool to manage projects, folders, and assets, upload files/folders, and create new versions directly from your terminal.
 
 For more details on installation and usage, see the [CLI Readme](apps/cli/README.md).
+
+## MCP Server
+
+Shumai includes a built-in MCP server at `/mcp`, so external agents such as Claude Code, Cursor, or Kiro can browse and organize your projects with OAuth or an API token. See the [MCP server guide](docs/developer/mcp-server.mdx) for setup.
+
+---
+
+## Community
+
+Thanks to [LINUX DO](https://linux.do/) for providing a community for open-source discussions and feedback.

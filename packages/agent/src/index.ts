@@ -18,20 +18,13 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { DatabaseSessionStorage } from './database-session-storage'
 import { metadataService } from '@shumai/core/src/metadata/metadata'
-import { createCreateFileTool } from './tools/create-file'
-import { createCreateFolderTool } from './tools/create-folder'
-import { createCreateVersionTool } from './tools/create-version'
-import { createDownloadAssetTool } from './tools/download-asset'
-import { createListAssetsTool } from './tools/list-assets'
-import { createReadAssetTool } from './tools/read-asset'
 import { createReadSkillTool } from './tools/read-skill'
 import { createReadThreadTool } from './tools/read-thread'
 import { createSandboxedBashTool } from './tools/sandboxed-bash'
 import { createGenerateImageTool } from './tools/generate-image'
 import { createGenerateVideoTool } from './tools/generate-video'
-import { createRenameAssetTool } from './tools/rename-asset'
-import { createMoveAssetsTool } from './tools/move-assets'
-import { createDeleteAssetTool } from './tools/delete-asset'
+import { buildOperationTools } from './operation-tools'
+import { createAutofillReadAssetTool } from './operation-extensions'
 import { mediaGenerationService } from '@shumai/core/src/media-generation/media-generation'
 import { serializeContextToXml } from './context/serialize-context'
 import { DEFAULT_DENIED_TOOLS, type ShumaiMessageContext } from '@shumai/dtos'
@@ -271,13 +264,12 @@ export async function createAgentSession(params: CreateAgentSessionParams) {
   const deniedTools = agentConfig?.deniedTools ?? [...DEFAULT_DENIED_TOOLS]
 
   const mediaTools: AgentTool[] = []
-  if (userId) {
-    mediaTools.push(createReadAssetTool(userId))
-  } else if (agent?.type === 'autofill' && assetId) {
+  // Agents acting for a user get read_asset / get_asset_render from the Operation registry
+  // (see systemTools below); the autofill system agent has its own team-scoped read_asset.
+  if (!userId && agent?.type === 'autofill' && assetId) {
     mediaTools.push(
-      createReadAssetTool({
+      createAutofillReadAssetTool({
         teamId,
-        agentType: 'autofill',
         targetAssetId: assetId,
       }),
     )
@@ -338,21 +330,15 @@ export async function createAgentSession(params: CreateAgentSessionParams) {
 
   const systemTools: AgentTool[] = []
   if (userId) {
-    const metadataSchema = await buildProjectMetadataSchema(projectId)
-    const agentContext = { teamId, agentId }
+    const creationMetadataSchema = await buildProjectMetadataSchema(projectId)
     systemTools.push(
-      createListAssetsTool(userId),
-      createCreateFolderTool(userId, agentContext),
-      createCreateFileTool(userId, metadataSchema, agentContext),
-      createCreateVersionTool(userId, metadataSchema, agentContext),
-      createDownloadAssetTool(userId),
-      createRenameAssetTool(userId, agentContext),
-      createMoveAssetsTool(userId, agentContext),
-      createDeleteAssetTool(userId, agentContext),
+      // Shared Operations (also exposed via MCP and the CLI): browsing, searching, organizing,
+      // reading and downloading assets, creating files and versions, comments and metadata
+      ...buildOperationTools({ userId, agentId, teamId, projectId }, { creationMetadataSchema }),
     )
   }
 
-  const readThread = createReadThreadTool()
+  const readThread = createReadThreadTool({ userId, teamId })
   const rawTools = [
     ...mediaTools,
     readSkill,
@@ -635,6 +621,4 @@ export * from './workflows/agent-chat'
 export * from './workflows/agent-embedding'
 export * from './tools/generate-image'
 export * from './tools/generate-video'
-export * from './tools/rename-asset'
-export * from './tools/move-assets'
-export * from './tools/delete-asset'
+export * from './operation-tools'

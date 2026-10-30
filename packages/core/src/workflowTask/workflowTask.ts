@@ -1,0 +1,330 @@
+import {
+  prisma,
+  cancelWorkflowTask,
+  WorkflowTaskStatus,
+  type WorkflowTaskType,
+  type Prisma,
+} from '@shumai/db'
+import type { WorkflowTaskItem, ListWorkflowTasksResponse } from '@shumai/dtos'
+import { paginateQuery } from '@shumai/core/src/pagination'
+import { logger } from '@shumai/core/src/logger'
+import { HTTPException } from 'hono/http-exception'
+
+export interface ListWorkflowTasksParams {
+  teamId: string
+  status?: WorkflowTaskStatus[]
+  types?: WorkflowTaskType[]
+  first?: number
+  after?: string
+}
+
+export interface StopWorkflowTaskParams {
+  teamId: string
+  taskId: string
+}
+
+export interface GetBatchWorkflowTaskStatusParams {
+  teamId: string
+  taskIds: string[]
+}
+
+interface EnrichedMetadata {
+  fileName?: string | null
+  fileSize?: number | null
+  projectId?: string | null
+  projectName?: string | null
+}
+
+function mapToWorkflowTaskItem(
+  task: {
+    id: string
+    uid: string
+    teamId: string | null
+    projectId: string | null
+    assetId: string
+    type: WorkflowTaskType | null
+    status: WorkflowTaskStatus | null
+    payload: unknown
+    output: unknown
+    heartbeat: Date | null
+    inputTokens: number
+    outputTokens: number
+    model: string | null
+    sessionId: string | null
+    createdAt: Date
+    updatedAt: Date
+  },
+  extra?: EnrichedMetadata,
+): WorkflowTaskItem {
+  return {
+    id: task.id,
+    uid: task.uid,
+    teamId: task.teamId,
+    projectId: extra?.projectId !== undefined ? extra.projectId : task.projectId,
+    projectName: extra?.projectName ?? null,
+    assetId: task.assetId,
+    fileName: extra?.fileName ?? null,
+    fileSize: extra?.fileSize ?? null,
+    type: task.type,
+    status: task.status,
+    payload: task.payload,
+    output: task.output,
+    heartbeat: task.heartbeat ? task.heartbeat.toISOString() : null,
+    inputTokens: task.inputTokens,
+    outputTokens: task.outputTokens,
+    model: task.model,
+    sessionId: task.sessionId,
+    createdAt: task.createdAt.toISOString(),
+    updatedAt: task.updatedAt.toISOString(),
+  }
+}
+
+export class WorkflowTaskService {
+  private async enrichWorkflowTasks<
+    T extends {
+      id: string
+      uid: string
+      teamId: string | null
+      projectId: string | null
+      assetId: string
+      type: WorkflowTaskType | null
+      status: WorkflowTaskStatus | null
+      payload: unknown
+      output: unknown
+      heartbeat: Date | null
+      inputTokens: number
+      outputTokens: number
+      model: string | null
+      sessionId: string | null
+      createdAt: Date
+      updatedAt: Date
+    },
+  >(tasks: T[]): Promise<WorkflowTaskItem[]> {
+    if (tasks.length === 0) {
+      return []
+    }
+
+    const assetIds = [...new Set(tasks.map((t) => t.assetId).filter(Boolean))]
+    const assets =
+      assetIds.length > 0
+        ? await prisma.asset.findMany({
+            where: { id: { in: assetIds } },
+            select: { id: true, name: true, sizeByte: true, projectId: true },
+          })
+        : []
+
+    const assetMap = new Map(assets.map((a) => [a.id, a]))
+
+    const allProjectIds = [
+      ...new Set(
+        [...tasks.map((t) => t.projectId), ...assets.map((a) => a.projectId)].filter(
+          (id): id is string => Boolean(id),
+        ),
+      ),
+    ]
+
+    const projects =
+      allProjectIds.length > 0
+        ? await prisma.project.findMany({
+            where: { id: { in: allProjectIds } },
+            select: { id: true, name: true },
+          })
+        : []
+
+    const projectMap = new Map(projects.map((p) => [p.id, p.name]))
+
+    return tasks.map((task) => {
+      const asset = assetMap.get(task.assetId)
+      const effectiveProjectId = task.projectId || asset?.projectId || null
+      const projectName = effectiveProjectId ? (projectMap.get(effectiveProjectId) ?? null) : null
+      const fileName = asset?.name ?? null
+      const fileSize = asset ? Number(asset.sizeByte) : null
+
+      return mapToWorkflowTaskItem(task, {
+        fileName,
+        fileSize,
+        projectId: effectiveProjectId,
+        projectName,
+      })
+    })
+  }
+
+  async listWorkflowTasks(params: ListWorkflowTasksParams): Promise<ListWorkflowTasksResponse> {
+    const teamProjects = await prisma.project.findMany({
+      where: { teamId: params.teamId },
+      select: { id: true },
+    })
+    const projectIds = teamProjects.map((p) => p.id)
+
+    const where: Prisma.WorkflowTaskWhereInput = {
+      OR: [
+        { teamId: params.teamId },
+        ...(projectIds.length > 0 ? [{ projectId: { in: projectIds } }] : []),
+      ],
+    }
+
+    if (params.status && params.status.length > 0) {
+      where.status = { in: params.status }
+    }
+
+    if (params.types && params.types.length > 0) {
+      where.type = { in: params.types }
+    }
+
+    const result = await paginateQuery(
+      (skip, take) =>
+        prisma.workflowTask.findMany({
+          where,
+          orderBy: { id: 'desc' },
+          skip,
+          take,
+        }),
+      () => prisma.workflowTask.count({ where }),
+      { first: params.first, after: params.after },
+    )
+
+    const nodes = await this.enrichWorkflowTasks(result.data)
+
+    return {
+      nodes,
+      pageInfo: {
+        hasNextPage: !!result.pageInfo.cursor,
+        endCursor: result.pageInfo.cursor || null,
+      },
+      total: result.pageInfo.total ?? 0,
+    }
+  }
+
+  async getBatchWorkflowTaskStatus(
+    params: GetBatchWorkflowTaskStatusParams,
+  ): Promise<{ tasks: WorkflowTaskItem[] }> {
+    if (!params.taskIds || params.taskIds.length === 0) {
+      return { tasks: [] }
+    }
+
+    const teamProjects = await prisma.project.findMany({
+      where: { teamId: params.teamId },
+      select: { id: true },
+    })
+    const projectIds = teamProjects.map((p) => p.id)
+
+    const tasks = await prisma.workflowTask.findMany({
+      where: {
+        id: { in: params.taskIds },
+        OR: [
+          { teamId: params.teamId },
+          ...(projectIds.length > 0 ? [{ projectId: { in: projectIds } }] : []),
+        ],
+      },
+      orderBy: { id: 'desc' },
+    })
+
+    const enriched = await this.enrichWorkflowTasks(tasks)
+    return { tasks: enriched }
+  }
+
+  async stopWorkflowTask(
+    params: StopWorkflowTaskParams,
+  ): Promise<{ success: boolean; task: WorkflowTaskItem }> {
+    const task = await prisma.workflowTask.findUnique({
+      where: { id: params.taskId },
+    })
+
+    if (!task) {
+      throw new HTTPException(404, { message: 'Workflow task not found' })
+    }
+
+    // Verify task belongs to this team (either directly or via project)
+    let belongsToTeam = task.teamId === params.teamId
+    if (!belongsToTeam && task.projectId) {
+      const project = await prisma.project.findUnique({
+        where: { id: task.projectId },
+        select: { teamId: true },
+      })
+      if (project?.teamId === params.teamId) {
+        belongsToTeam = true
+      }
+    }
+
+    if (!belongsToTeam) {
+      throw new HTTPException(403, { message: 'Permission denied: Task does not belong to team' })
+    }
+
+    if (
+      task.status !== WorkflowTaskStatus.pending &&
+      task.status !== WorkflowTaskStatus.processing
+    ) {
+      throw new HTTPException(400, {
+        message: `Only pending or processing tasks can be stopped. Current status: ${task.status}`,
+      })
+    }
+
+    // Notify workflow engine (DBOS) to cancel workflow execution
+    try {
+      await cancelWorkflowTask(task.id)
+    } catch (err) {
+      logger.error({ taskId: task.id, err }, 'Failed to cancel workflow task in workflow engine')
+      throw new HTTPException(502, {
+        message: `Failed to cancel workflow task in engine: ${err instanceof Error ? err.message : String(err)}`,
+      })
+    }
+
+    const errorMsg = 'Task was stopped by user'
+    const prevOutput =
+      typeof task.output === 'object' && task.output !== null
+        ? (task.output as Record<string, unknown>)
+        : {}
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updateResult = await tx.workflowTask.updateMany({
+        where: {
+          id: task.id,
+          status: { in: [WorkflowTaskStatus.pending, WorkflowTaskStatus.processing] },
+        },
+        data: {
+          status: WorkflowTaskStatus.failed,
+          output: {
+            ...prevOutput,
+            error: errorMsg,
+          },
+        },
+      })
+
+      if (updateResult.count === 0) {
+        const latestTask = await tx.workflowTask.findUniqueOrThrow({
+          where: { id: task.id },
+        })
+        throw new HTTPException(409, {
+          message: `Task is no longer active. Current status: ${latestTask.status}`,
+        })
+      }
+
+      if (task.assetId) {
+        await tx.$executeRaw`
+          UPDATE "assets"
+          SET
+            "status" = 'failed'::"AssetStatus",
+            "media" = COALESCE("media", '{}'::jsonb) || jsonb_build_object('error', ${errorMsg}::text)
+          WHERE "id" = ${task.assetId}
+            AND "is_deleted" = false
+            AND "status" != 'processed'::"AssetStatus"
+        `
+      }
+
+      return await tx.workflowTask.findUniqueOrThrow({
+        where: { id: task.id },
+      })
+    })
+
+    logger.info({ taskId: task.id, teamId: params.teamId }, 'Workflow task stopped by user')
+
+    const [enriched] = await this.enrichWorkflowTasks([updated])
+
+    return {
+      success: true,
+      task: enriched,
+    }
+  }
+}
+
+export const workflowTaskService = new WorkflowTaskService()

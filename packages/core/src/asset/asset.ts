@@ -397,8 +397,9 @@ export class AssetService {
     }
   }
 
-  async copyAssets(req: CopyAssetsRequest): Promise<void> {
-    await this.prismaClient.$transaction(async (tx) => {
+  /** Copies assets into a folder. Returns the IDs of the copies, in the order of `assetIds`. */
+  async copyAssets(req: CopyAssetsRequest): Promise<string[]> {
+    return this.prismaClient.$transaction(async (tx) => {
       const newParent = await tx.asset.findUnique({
         where: { id: req.newParentId },
         include: { project: { include: { team: true } } },
@@ -448,6 +449,7 @@ export class AssetService {
       let firstSortIndex = firstFile?.sortIndex || null
 
       let totalSize = 0
+      const copiedIds: string[] = new Array(req.assetIds.length)
       for (let i = req.assetIds.length - 1; i >= 0; i--) {
         const assetId = req.assetIds[i]
         const asset = assetsToCopy.find((a) => a.id === assetId)!
@@ -461,6 +463,7 @@ export class AssetService {
           req.creatorId,
           req.withComments,
         )
+        copiedIds[i] = copiedAsset.id
         totalSize += Number(copiedAsset.sizeByte)
         firstSortIndex = newSortIndex
       }
@@ -472,6 +475,7 @@ export class AssetService {
         },
       })
       await this.updateAncestorsSize(tx, newParent.id, totalSize)
+      return copiedIds
     })
   }
 
@@ -1140,6 +1144,43 @@ export class AssetService {
     throw new Error(`Asset has no team context: ${assetId}`)
   }
 
+  /**
+   * Lightweight lookup of an asset's type and team/project, without building a full AssetInfo
+   * (no presigned URLs). Use it to capture context before a mutation such as a delete.
+   */
+  async getAssetMeta(assetId: string): Promise<{
+    id: string
+    name: string
+    type: AssetType
+    parentId: string | null
+    teamId: string
+    projectId?: string
+  }> {
+    const asset = await this.prismaClient.asset.findUnique({
+      where: { id: assetId },
+      select: { id: true, name: true, type: true, parentId: true },
+    })
+    if (!asset) {
+      throw new HTTPException(404, { message: 'Asset not found' })
+    }
+    const { teamId, projectId } = await this.getAssetContext(assetId)
+    return { ...asset, teamId, projectId }
+  }
+
+  /**
+   * The asset whose file is stored under `key`, with its creator. Used to make finishing an
+   * upload idempotent: the same uploaded object is never attached to two assets.
+   */
+  async findAssetByStorageKey(
+    key: string,
+  ): Promise<{ id: string; creatorId: string | null } | null> {
+    return this.prismaClient.asset.findFirst({
+      where: { storageKey: { key } },
+      select: { id: true, creatorId: true },
+      orderBy: { id: 'asc' },
+    })
+  }
+
   async resolveTargetAssetId(assetId: string): Promise<string> {
     const asset = await this.prismaClient.asset.findUnique({
       where: { id: assetId },
@@ -1419,6 +1460,17 @@ export class AssetService {
           logger.warn({ taskId: task.id, err }, 'Failed to cancel workflow task during purge')
         }
       }
+
+      await this.prismaClient.workflowTask.updateMany({
+        where: {
+          assetId: { in: affectedIds },
+          status: { in: [WorkflowTaskStatus.pending, WorkflowTaskStatus.processing] },
+        },
+        data: {
+          status: WorkflowTaskStatus.failed,
+          output: { error: 'Asset was purged' },
+        },
+      })
     }
   }
 
@@ -1518,8 +1570,15 @@ export class AssetService {
         }
       }
 
-      await this.prismaClient.workflowTask.deleteMany({
-        where: { assetId: { in: pendingAssetIds } },
+      await this.prismaClient.workflowTask.updateMany({
+        where: {
+          assetId: { in: pendingAssetIds },
+          status: { in: [WorkflowTaskStatus.pending, WorkflowTaskStatus.processing] },
+        },
+        data: {
+          status: WorkflowTaskStatus.failed,
+          output: { error: 'Asset was purged' },
+        },
       })
     }
 
@@ -1698,7 +1757,16 @@ export class AssetService {
     }
   }
 
-  async createComment(req: CreateCommentRequest): Promise<CommentInfo> {
+  /**
+   * Creates a comment or reply. Mentions of agents (`<@agentId>`) start a chat with them
+   * unless `triggerAgents` is false, which keeps an agent's own comments from starting
+   * further agent runs.
+   */
+  async createComment(
+    req: CreateCommentRequest,
+    options: { triggerAgents?: boolean } = {},
+  ): Promise<CommentInfo> {
+    const triggerAgents = options.triggerAgents ?? true
     let commentId = ''
     const resolvedAssetId = await this.resolveLatestVersionId(req.assetId)
 
@@ -1746,6 +1814,8 @@ export class AssetService {
           })
         }
       }
+
+      if (!triggerAgents) return
 
       // Parse bot mentions
       const botMentionMatches = [...req.message.matchAll(/<@([^>]+)>/g)]
@@ -2047,7 +2117,10 @@ export class AssetService {
           orderBy: { id: 'asc' },
         })
       },
-      async () => this.prismaClient.assetComment.count({ where: { assetId, replyToId: null } }),
+      async () =>
+        this.prismaClient.assetComment.count({
+          where: { assetId: resolvedAssetId, replyToId: null },
+        }),
       params,
     )
 
@@ -2408,12 +2481,7 @@ export class AssetService {
       }
 
       const proxyType = (media?.proxyType || null) as
-        | 'image'
-        | 'video'
-        | 'audio'
-        | 'pdf'
-        | '3d'
-        | null
+        'image' | 'video' | 'audio' | 'pdf' | '3d' | null
 
       result.push({
         id: a.id,
@@ -2780,12 +2848,7 @@ export class AssetService {
     if (!asset.media) return null
 
     const proxyType = (asset.media?.proxyType || null) as
-      | 'image'
-      | 'video'
-      | 'audio'
-      | 'pdf'
-      | '3d'
-      | null
+      'image' | 'video' | 'audio' | 'pdf' | '3d' | null
 
     let rawThumbKey: string | undefined
     if (proxyType === 'image' && asset.media.thumbnail?.key) {
@@ -2864,11 +2927,7 @@ export class AssetService {
             'GET',
           )
           const attachmentProxyType = (a.asset.media?.proxyType || null) as
-            | 'image'
-            | 'video'
-            | 'audio'
-            | 'pdf'
-            | null
+            'image' | 'video' | 'audio' | 'pdf' | null
           attachments.push({
             id: a.id,
             assetId: a.asset.id,

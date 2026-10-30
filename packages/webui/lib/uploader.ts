@@ -5,6 +5,7 @@ import type { PresignedUrl } from '@shumai/dtos'
 import { client } from '@/ui/api/client'
 import { useUploadStore } from '@/ui/stores/upload'
 import { toast } from 'sonner'
+import { m } from '@/ui/paraglide/messages.js'
 import { acquireWakeLock, releaseWakeLock } from './wake-lock'
 
 export type FileWithId = {
@@ -18,6 +19,7 @@ export interface ActiveUploadFile {
   fileId: string
   key?: string
   uploadId?: string
+  url?: string
 }
 
 export const activeUploads = new Map<string, ActiveUploadFile>()
@@ -63,6 +65,34 @@ if (typeof window !== 'undefined') {
   })
 }
 
+const LOCALHOST_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'])
+
+export const MAX_RETRY_DELAY_MS = 60000
+export const BASE_RETRY_DELAY_MS = 1000
+
+export function calculateBackoffDelay(
+  attempts: number,
+  maxDelayMs = MAX_RETRY_DELAY_MS,
+  baseDelayMs = BASE_RETRY_DELAY_MS,
+): number {
+  const exponentialDelay = Math.min(Math.pow(2, attempts) * baseDelayMs, maxDelayMs)
+  const jitter = exponentialDelay * (Math.random() * 0.3 - 0.15) // ±15%
+  return Math.min(maxDelayMs, Math.max(baseDelayMs, Math.round(exponentialDelay + jitter)))
+}
+
+export function isLocalhostStorageMismatch(uploadUrlString?: string): boolean {
+  if (!uploadUrlString || typeof window === 'undefined') return false
+  try {
+    const uploadUrl = new URL(uploadUrlString, window.location.origin)
+    const isUploadLocalhost = LOCALHOST_HOSTS.has(uploadUrl.hostname)
+    const isWindowLocalhost = LOCALHOST_HOSTS.has(window.location.hostname)
+
+    return isUploadLocalhost && !isWindowLocalhost
+  } catch {
+    return false
+  }
+}
+
 export function isNetworkIssue(error?: unknown): boolean {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return true
@@ -76,7 +106,7 @@ export function isNetworkIssue(error?: unknown): boolean {
     msg.includes('network error') ||
     msg.includes('failed to fetch') ||
     msg.includes('networkerror') ||
-    msg.includes('load failed') ||
+    (msg.includes('load failed') && !msg.includes('upload failed')) ||
     msg.includes('err_internet_disconnected')
   ) {
     return true
@@ -171,6 +201,12 @@ export async function uploadFilesWithUppy({
         }
 
         const data = (await res.json()) as { url: string }
+        if (fileId) {
+          const active = activeUploads.get(fileId)
+          if (active) {
+            active.url = data.url
+          }
+        }
         return { url: data.url }
       },
     })
@@ -199,7 +235,6 @@ export async function uploadFilesWithUppy({
 
   const confirmationPromises = new Map<string, Promise<void>>()
   const retryCounts = new Map<string, number>()
-  const MAX_ONLINE_RETRIES = 3
   let retryTimeout: ReturnType<typeof setTimeout> | null = null
 
   const triggerRetry = () => {
@@ -225,6 +260,11 @@ export async function uploadFilesWithUppy({
   const handleBackOnline = () => {
     const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true
     console.log(`[Uploader] Network 'online' event received! navigator.onLine = ${isOnline}`)
+    retryCounts.clear()
+    if (retryTimeout) {
+      clearTimeout(retryTimeout)
+      retryTimeout = null
+    }
     triggerRetry()
   }
 
@@ -268,7 +308,7 @@ export async function uploadFilesWithUppy({
         console.error('Failed to confirm upload:', err)
         failFile(taskId, fileId)
         decrement()
-        toast.error(`Failed to confirm upload: ${file.name}`)
+        toast.error(m.failed_confirm_upload_with_name({ name: file.name }))
         await onFileFinished?.(fileId)
         throw err
       }
@@ -283,11 +323,21 @@ export async function uploadFilesWithUppy({
   ) => {
     const fileId = file.meta.fileId as string
     if (!activeUploads.has(fileId)) return
+    const active = activeUploads.get(fileId)
+    const uploadUrl = (file.meta?.url as string | undefined) || active?.url
+
     activeUploads.delete(fileId)
     failFile(taskId, fileId)
     decrement()
 
-    toast.error(`Failed to upload file: ${file.name}`)
+    if (isLocalhostStorageMismatch(uploadUrl)) {
+      toast.error(m.upload_failed_s3_endpoint_localhost(), {
+        id: 's3-endpoint-localhost-mismatch',
+        duration: 10000,
+      })
+    } else {
+      toast.error(m.failed_upload_file_with_name({ name: file.name }))
+    }
 
     const errorPromise = (async () => {
       try {
@@ -295,7 +345,8 @@ export async function uploadFilesWithUppy({
           param: { teamId, taskId },
           json: {
             fileId,
-            errorMessage: (error as Error)?.message || 'Upload failed',
+            errorMessage:
+              (error as Error)?.message || (typeof error === 'string' ? error : 'Upload failed'),
           },
         })
       } catch (err) {
@@ -311,28 +362,36 @@ export async function uploadFilesWithUppy({
     if (!file) return
     console.error(`[Uploader] upload-error for ${file.name}:`, error)
 
+    const fileId = file.meta?.fileId as string | undefined
+    const uploadUrl =
+      (file.meta?.url as string | undefined) ||
+      (fileId ? activeUploads.get(fileId)?.url : undefined)
+
+    if (isLocalhostStorageMismatch(uploadUrl)) {
+      console.warn(
+        `[Uploader] Localhost storage endpoint mismatch detected for ${file.name}. Failing permanently without retry.`,
+      )
+      handlePermanentError(file, error)
+      return
+    }
+
     if (isNetworkIssue(error)) {
       console.warn(
         `[Uploader] Network error detected for ${file.name}. Keeping upload active to resume when connection is restored.`,
       )
 
       if (typeof navigator !== 'undefined' && navigator.onLine) {
-        const fileId = file.meta.fileId as string
-        const attempts = (retryCounts.get(fileId) || 0) + 1
-        retryCounts.set(fileId, attempts)
-
-        if (attempts > MAX_ONLINE_RETRIES) {
-          console.error(
-            `[Uploader] Exceeded max online retries (${MAX_ONLINE_RETRIES}) for ${file.name}. Failing permanently.`,
-          )
-          handlePermanentError(file, error)
-          return
+        const fileId = file.meta?.fileId as string | undefined
+        const attempts = (fileId ? retryCounts.get(fileId) || 0 : 0) + 1
+        if (fileId) {
+          retryCounts.set(fileId, attempts)
         }
 
+        const delayMs = calculateBackoffDelay(attempts)
         console.log(
-          `[Uploader] Scheduling retry for ${file.name} (attempt ${attempts}/${MAX_ONLINE_RETRIES})...`,
+          `[Uploader] Scheduling retry for ${file.name} (attempt ${attempts}, delay ${delayMs}ms)...`,
         )
-        scheduleRetry(2000)
+        scheduleRetry(delayMs)
       }
       return
     }
@@ -357,6 +416,7 @@ export async function uploadFilesWithUppy({
       taskId,
       fileId,
       key,
+      url,
     })
 
     increment()
@@ -385,7 +445,19 @@ export async function uploadFilesWithUppy({
         const failedFiles = result?.failed || []
         const isOffline = typeof navigator !== 'undefined' && !navigator.onLine
         const hasNetworkFailures =
-          isOffline || failedFiles.some((f) => isNetworkIssue((f as { error?: unknown })?.error))
+          isOffline ||
+          failedFiles.some((f) => {
+            const err = (f as { error?: unknown })?.error
+            const fileMeta = (f as { meta?: Record<string, unknown> })?.meta
+            const fId = fileMeta?.fileId as string | undefined
+            const uUrl =
+              (fileMeta?.url as string | undefined) ||
+              (fId ? activeUploads.get(fId)?.url : undefined)
+            if (isLocalhostStorageMismatch(uUrl)) {
+              return false
+            }
+            return isNetworkIssue(err)
+          })
 
         if (hasNetworkFailures) {
           console.log(

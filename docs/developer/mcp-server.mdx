@@ -1,0 +1,222 @@
+---
+title: Shumai MCP Server
+description: Let external AI agents such as Claude Code, Cursor, or Kiro work with your Shumai projects.
+---
+
+Shumai includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server. Any MCP-compatible agent can connect to it and browse projects, look at images, videos, and documents, create folders, and organize assets on your behalf, using the same tools as Shumai's built-in agent.
+
+<Note>
+  This page is about connecting **external agents to Shumai**. To connect Shumai's own agents to
+  other tools, see [MCP Servers](/using-shumai/mcp-servers).
+</Note>
+
+---
+
+## Connecting a Client
+
+The MCP server uses the Streamable HTTP transport at:
+
+```
+https://<your-shumai-host>/mcp
+```
+
+Shumai supports **OAuth 2.1** (recommended for seamless browser-based authentication) and **API tokens** (for headless environments or clients that do not support OAuth).
+
+Pick your client below to get started:
+
+### Claude Code
+
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) natively supports remote MCP servers with OAuth authentication. Add Shumai to your Claude Code configuration by running:
+
+```bash
+claude mcp add shumai --transport http https://<your-shumai-host>/mcp
+```
+
+When you start a new conversation, Claude Code will open a browser window for you to sign in and authorize access to your Shumai account. No manual API token is required.
+
+Alternatively, you can manually configure `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "shumai": {
+      "type": "http",
+      "url": "https://<your-shumai-host>/mcp"
+    }
+  }
+}
+```
+
+Or connect stdio via `mcp-remote`:
+
+```bash
+claude mcp add shumai -- npx -y mcp-remote https://<your-shumai-host>/mcp
+```
+
+### Cursor
+
+Add Shumai to your Cursor MCP configuration (`~/.cursor/mcp.json` or project `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "shumai": {
+      "url": "https://<your-shumai-host>/mcp"
+    }
+  }
+}
+```
+
+When Cursor connects to the server, it will prompt you in the browser to complete the OAuth sign-in and authorize access.
+
+To authenticate with an API token instead, pass the `Authorization` header:
+
+```json
+{
+  "mcpServers": {
+    "shumai": {
+      "url": "https://<your-shumai-host>/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-api-token>"
+      }
+    }
+  }
+}
+```
+
+### Codex
+
+```bash
+codex mcp add shumai --url https://<your-shumai-host>/mcp
+codex mcp login shumai
+```
+
+### VS Code
+
+```bash
+code --add-mcp '{"name":"shumai","type":"http","url":"https://<your-shumai-host>/mcp"}'
+```
+
+Start the server from your **MCP Servers** list in VS Code and sign in to Shumai when prompted.
+
+### Other Clients
+
+**Remote (HTTP)**
+
+If your client natively supports remote HTTP MCP servers:
+
+```json
+{
+  "mcpServers": {
+    "shumai": {
+      "url": "https://<your-shumai-host>/mcp"
+    }
+  }
+}
+```
+
+**Local Bridge (`mcp-remote` / stdio)**
+
+For clients that only support local (stdio) MCP servers, use `mcp-remote` to connect to Shumai's remote HTTP endpoint:
+
+```json
+{
+  "mcpServers": {
+    "shumai": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://<your-shumai-host>/mcp"]
+    }
+  }
+}
+```
+
+---
+
+## Authentication
+
+Shumai's MCP server supports two authentication methods:
+
+### OAuth 2.1 (Recommended)
+
+Shumai implements OAuth 2.1 with Dynamic Client Registration ([RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591)) and OAuth Protected Resource Metadata ([RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728) / [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414)).
+
+- **Seamless Sign-in**: Supported MCP clients automatically discover authorization endpoints and complete the OAuth handshake in your browser.
+- **Access Control**: External agents act with your permissions in Shumai. Actions are attributed to your user account and logged in the team audit log with `via: mcp`.
+- **Clearing OAuth Cache**: If you need to re-authenticate or clear stored credentials in CLI tools such as `mcp-remote` or Claude Code, remove the local authentication cache:
+
+```bash
+rm -rf ~/.mcp-auth
+```
+
+### API Tokens
+
+API tokens are ideal for automated CI/CD pipelines, headless environments, or clients that do not support interactive OAuth.
+
+1. In Shumai, open **Team Settings** → **API Tokens**.
+2. Enter a name (for example, `ci-agent` or `cursor-token`) and click **Generate**.
+3. Copy the token from the dialog. It is only shown once.
+4. Pass the token in the `Authorization: Bearer <your-api-token>` header (or `x-api-key` header).
+
+<Warning>
+  An API token acts as you: the agent can do anything your account can do in Shumai. Store it like a
+  password, use a separate token per client, and revoke tokens you no longer use from **Team
+  Settings** → **API Tokens**.
+</Warning>
+
+---
+
+## Available Tools
+
+| Tool                      | What it does                                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `list_projects`           | Lists the projects you can access, with each project's root folder.                                              |
+| `list_assets`             | Lists files and folders in a folder, page by page.                                                               |
+| `search_assets`           | Searches a folder and its subfolders by name, by meaning (when AI search is enabled), or by metadata.            |
+| `create_folder`           | Creates a folder.                                                                                                |
+| `rename_asset`            | Renames a file or folder.                                                                                        |
+| `move_assets`             | Moves files or folders into another folder.                                                                      |
+| `copy_assets`             | Copies files or folders into another folder of the same team.                                                    |
+| `delete_asset`            | Moves a file or folder to the project trash. Marked as destructive so clients can ask you to confirm.            |
+| `read_asset`              | Looks at a file: an image, video frames, PDF pages, a 3D model view, or the text of a text file.                 |
+| `get_asset_render`        | Gets the result of a `read_asset` call that was still rendering.                                                 |
+| `download_asset`          | Gets download links for up to 50 files: the web preview version by default, or the original with `proxy: false`. |
+| `get_folder_instructions` | Reads a folder's instructions for AI agents (its AGENTS.md).                                                     |
+| `create_file`             | Starts uploading a new file into a folder (see [Uploading Files](#uploading-files)).                             |
+| `create_version`          | Starts uploading a new version of a file.                                                                        |
+| `complete_upload`         | Finishes an upload started with `create_file` or `create_version`.                                               |
+| `list_comments`           | Lists the review comments on a file, with their replies.                                                         |
+| `create_comment`          | Comments on a file (optionally at a timecode) or replies to a comment.                                           |
+| `resolve_comment`         | Marks a comment as resolved, or unresolved again.                                                                |
+| `list_metadata_fields`    | Lists a project's metadata fields, such as status, rating, and custom fields, with their choices.                |
+| `update_asset_metadata`   | Sets metadata values on a file.                                                                                  |
+| `create_version_stack`    | Stacks files in the same folder as versions of one asset.                                                        |
+| `list_versions`           | Lists the versions in a version stack, latest first.                                                             |
+| `remove_version`          | Takes a version out of its stack. The file is kept.                                                              |
+
+### Reading Files
+
+`read_asset` attaches the images to the result so the AI model can see them: up to 8 images per call, each up to 2 MB. Any other images are listed as links only. Every result also includes a link to each image, valid for about an hour. Pass `inlineImages: false` to get links only, for example when your client can't show images.
+
+Rendering video frames or PDF pages can take a while. If it takes longer than about 20 seconds, `read_asset` returns `status: "pending"` with a `taskId`, and the model calls `get_asset_render` with that `taskId` to get the result. Only the user who started the read can get its result.
+
+### Uploading Files
+
+Uploading takes three steps, so large files never pass through the AI model:
+
+1. `create_file` (or `create_version`) returns an `uploadUrl` and an `uploadId`.
+2. The agent uploads the file's bytes to `uploadUrl` with an HTTP `PUT`, for example `curl -T video.mp4 "<uploadUrl>"`.
+3. `complete_upload` with the `uploadId` creates the file and starts processing it (previews, transcoding).
+
+The upload URL and ID are valid for about an hour, and only you can complete your upload. If the project has **Creation Context** metadata fields (for example, the prompt or model used to make a file), pass their values as `metadata` to `create_file` or `create_version`; `list_metadata_fields` shows which fields they are.
+
+The agent must be able to reach the upload URL. With Shumai's local storage, it points to your Shumai server; with S3 storage, to your S3 endpoint.
+
+Every call runs with your permissions: for example, a **Reviewer** can list assets but cannot create or rename them. Actions are recorded in the team audit log and attributed to you, marked as coming from MCP.
+
+---
+
+## Troubleshooting
+
+- **OAuth Authorization Expired or Invalid**: Clear your client's local OAuth session cache (`rm -rf ~/.mcp-auth`) and restart your MCP client to re-authenticate.
+- **401 Unauthorized**: The API token or OAuth access token is missing, expired, mistyped, or revoked. For API tokens, generate a new token under **Team Settings** → **API Tokens** and update your client configuration.
+- **Permission errors on a tool call**: Your role in that team or project does not allow the action.

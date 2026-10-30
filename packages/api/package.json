@@ -1,18 +1,24 @@
 {
   "name": "@shumai/api",
-  "version": "0.6.0",
+  "version": "0.6.2",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
+    "@better-auth/mcp": "1.7.12",
     "@hono/zod-validator": "0.7.6",
+    "@modelcontextprotocol/server": "2.0.0",
     "@shumai/core": "workspace:*",
     "@shumai/db": "workspace:*",
     "@shumai/dtos": "workspace:*",
+    "@shumai/operations": "workspace:*",
     "hono": "4.13.5",
     "pino": "10.3.1",
     "ulid": "3.0.2",
     "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0"
   }
 }

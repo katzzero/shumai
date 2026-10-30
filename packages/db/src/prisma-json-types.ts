@@ -359,8 +359,25 @@ declare global {
       screenshot?: ScreenshotSpec
       imageAnnotation?: ImageAnnotationSpec
       pdfPages?: PdfPagesSpec
+      /** Render that produced this result, if any (set by the read_asset pipeline). */
+      assetRead?: AssetReadRequest
       watermark?: WatermarkTaskPayload
       recoveryAttempts?: number
+    }
+
+    /**
+     * Records which reader started a render so the read can be completed later from the task
+     * alone (see `get_asset_render`), on any server instance.
+     */
+    export interface AssetReadRequest {
+      reader: 'model3d' | 'image' | 'video' | 'document'
+      /** The reader's validated options. */
+      options?: Record<string, unknown>
+      annotationId?: string
+      /** Reader-private values computed while planning (e.g. the resolved 3D angle). */
+      context?: Record<string, unknown>
+      /** User who requested the read; undefined for system agents (autofill). */
+      requestedBy?: string
     }
 
     export interface WorkflowTaskOutput {
@@ -554,5 +571,12 @@ declare global {
       proxyType?: 'image' | 'video' | 'audio' | 'pdf' | '3d' | null
     }
     export type KanbanCommentAttachmentList = KanbanCommentAttachment[]
+
+    // ----------------------------------------------------------------------
+    // Better Auth OAuth
+    // ----------------------------------------------------------------------
+    export type OauthMetadata = Record<string, unknown>
+    export type OauthCustomClaims = Record<string, unknown>
+    export type OauthConfirmation = Record<string, unknown>
   }
 }

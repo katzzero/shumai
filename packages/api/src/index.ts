@@ -1,4 +1,5 @@
 import type { Prisma } from '@shumai/db'
+import { auth } from '@shumai/core/src/auth/auth'
 import { Hono } from 'hono'
 import agentRoute from './agent'
 import chatRoute from './chat'
@@ -11,8 +12,10 @@ import inviteRoute from './invite'
 import metadataRoute from './metadata'
 import mcpRoute, { mcpOauthCallbackRoute } from './mcp'
 import { authMiddleware } from './middleware/auth'
-import { tokenAuthMiddleware } from './middleware/tokenAuth'
+import { requireApiTokenMiddleware, tokenAuthMiddleware } from './middleware/tokenAuth'
+import mcpServerRoute from './mcp-server'
 import notificationRoute from './notification'
+import operationsRoute from './operations'
 import projectRoute from './project'
 import providerRoute from './provider'
 import publicInviteRoute from './public-invite'
@@ -39,6 +42,10 @@ const apiRoute = new Hono<{ Variables: { user: User } }>()
   .route('/', publicShareRoute)
   .route('/', localUploadRoute)
   .route('/', mcpOauthCallbackRoute)
+
+  // Programmatic endpoint for the CLI: API token required, session cookies not accepted
+  .use('/ops/*', requireApiTokenMiddleware)
+  .route('/', operationsRoute)
 
   // Selected routes supporting API token authentication
   .use('/projects', tokenAuthMiddleware)
@@ -73,6 +80,20 @@ const apiRoute = new Hono<{ Variables: { user: User } }>()
   .route('/', quotaRoute)
   .route('/', kanbanRoute)
   .route('/', mediaGenerationRoute)
+
+// RFC 8414 & RFC 9728 OAuth discovery endpoints
+app.on(['GET', 'HEAD', 'OPTIONS'], '/.well-known/oauth-authorization-server', (c) => {
+  const url = new URL(c.req.raw.url)
+  url.pathname = '/.well-known/oauth-authorization-server/api/auth'
+  return auth.handler(new Request(url.toString(), c.req.raw))
+})
+app.on(['GET', 'HEAD', 'OPTIONS'], '/.well-known/*', (c) => auth.handler(c.req.raw))
+
+// Shumai's MCP server lives at the root (`/mcp`), next to the API rather than inside it, so
+// it can also be served from a dedicated host (e.g. `https://mcp.example.com/mcp`). It supports
+// both static API tokens and OAuth 2.1 authentication. The `/api/mcp/servers` routes are a separate
+// feature: external MCP servers that Shumai's own agent connects to.
+app.route('/', mcpServerRoute)
 
 app.route('/files', s3Route)
 

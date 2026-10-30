@@ -68,6 +68,14 @@ vi.mock('@shumai/core/src/gotenberg/gotenberg', () => ({
   },
 }))
 
+vi.mock('@shumai/core/src/workflowTask/workflowTask', () => ({
+  workflowTaskService: {
+    listWorkflowTasks: vi.fn(),
+    getBatchWorkflowTaskStatus: vi.fn(),
+    stopWorkflowTask: vi.fn(),
+  },
+}))
+
 describe('team api', () => {
   const app = new Hono().use('*', authMiddleware).route('/', teamRoute)
   let mockCreateTeam: any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -485,27 +493,27 @@ describe('team api', () => {
       vi.mocked(apiTokenService.listTokens).mockResolvedValue([
         {
           id: 'token1',
-          token: 'ulid1',
+          tokenHint: 'a1b2',
           name: 'cli-key',
           userId: 'user1',
           createdAt: mockDate,
           updatedAt: mockDate,
         },
-        // Mocking return value of listTokens is simpler with any casting
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ] as any)
+      ])
 
       const res = await app.request('/teams/t1/api-tokens')
 
       expect(res.status).toBe(200)
       const data = await res.json()
       expect(data).toHaveLength(1)
+      // The plaintext token is never returned when listing
       expect(data[0]).toEqual({
         id: 'token1',
-        token: 'ulid1',
+        tokenHint: 'a1b2',
         name: 'cli-key',
         createdAt: '2026-06-21T00:00:00.000Z',
       })
+      expect(data[0]).not.toHaveProperty('token')
       expect(apiTokenService.listTokens).toHaveBeenCalledWith('user1')
     })
 
@@ -513,15 +521,16 @@ describe('team api', () => {
       const { apiTokenService } = await import('@shumai/core/src/user/api-token')
       const mockDate = new Date('2026-06-21T00:00:00.000Z')
       vi.mocked(apiTokenService.createToken).mockResolvedValue({
-        id: 'token1',
-        token: 'ulid1',
-        name: 'cli-key',
-        userId: 'user1',
-        createdAt: mockDate,
-        updatedAt: mockDate,
-        // Mocking return value of createToken is simpler with any casting
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any)
+        record: {
+          id: 'token1',
+          tokenHint: 'a1b2',
+          name: 'cli-key',
+          userId: 'user1',
+          createdAt: mockDate,
+          updatedAt: mockDate,
+        },
+        token: 'shumai_plaintext-a1b2',
+      })
 
       const res = await app.request('/teams/t1/api-tokens', {
         method: 'POST',
@@ -531,9 +540,11 @@ describe('team api', () => {
 
       expect(res.status).toBe(200)
       const data = await res.json()
+      // The plaintext is returned exactly once, at creation
       expect(data).toEqual({
         id: 'token1',
-        token: 'ulid1',
+        token: 'shumai_plaintext-a1b2',
+        tokenHint: 'a1b2',
         name: 'cli-key',
         createdAt: '2026-06-21T00:00:00.000Z',
       })
@@ -646,6 +657,129 @@ describe('team api', () => {
       const data = await res.json()
       expect(data.nodes).toHaveLength(1)
       expect(data.nodes[0].id).toBe('log1')
+      expect(authzService.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({
+          permission: Permission.Admin,
+          type: ResourceType.Team,
+          id: 't1',
+        }),
+      )
+    })
+
+    it('GET /teams/:teamId/workflow-tasks returns list of workflow tasks for team owner', async () => {
+      const { workflowTaskService } = await import('@shumai/core/src/workflowTask/workflowTask')
+      vi.mocked(workflowTaskService.listWorkflowTasks).mockResolvedValue({
+        nodes: [
+          {
+            id: 'task1',
+            uid: 'uid1',
+            teamId: 't1',
+            projectId: 'p1',
+            assetId: 'a1',
+            type: 'transcode_video' as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+            status: 'processing' as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+            payload: {},
+            output: null,
+            heartbeat: null,
+            inputTokens: 0,
+            outputTokens: 0,
+            model: null,
+            sessionId: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+        pageInfo: {
+          hasNextPage: false,
+          endCursor: null,
+        },
+        total: 1,
+      })
+
+      const res = await app.request('/teams/t1/workflow-tasks')
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.nodes).toHaveLength(1)
+      expect(data.nodes[0].id).toBe('task1')
+      expect(authzService.hasPermission).toHaveBeenCalledWith(
+        expect.objectContaining({
+          permission: Permission.Admin,
+          type: ResourceType.Team,
+          id: 't1',
+        }),
+      )
+    })
+
+    it('POST /teams/:teamId/workflow-tasks/batch-status returns batch task statuses', async () => {
+      const { workflowTaskService } = await import('@shumai/core/src/workflowTask/workflowTask')
+      vi.mocked(workflowTaskService.getBatchWorkflowTaskStatus).mockResolvedValue({
+        tasks: [
+          {
+            id: 'task1',
+            uid: 'uid1',
+            teamId: 't1',
+            projectId: 'p1',
+            assetId: 'a1',
+            type: 'transcode_video' as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+            status: 'completed' as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+            payload: {},
+            output: null,
+            heartbeat: null,
+            inputTokens: 0,
+            outputTokens: 0,
+            model: null,
+            sessionId: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      })
+
+      const res = await app.request('/teams/t1/workflow-tasks/batch-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskIds: ['task1'] }),
+      })
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.tasks).toHaveLength(1)
+      expect(data.tasks[0].status).toBe('completed')
+    })
+
+    it('POST /teams/:teamId/workflow-tasks/:taskId/stop stops task for team owner', async () => {
+      const { workflowTaskService } = await import('@shumai/core/src/workflowTask/workflowTask')
+      vi.mocked(workflowTaskService.stopWorkflowTask).mockResolvedValue({
+        success: true,
+        task: {
+          id: 'task1',
+          uid: 'uid1',
+          teamId: 't1',
+          projectId: 'p1',
+          assetId: 'a1',
+          type: 'transcode_video' as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+          status: 'failed' as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+          payload: {},
+          output: { error: 'Task was stopped by user' },
+          heartbeat: null,
+          inputTokens: 0,
+          outputTokens: 0,
+          model: null,
+          sessionId: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      })
+
+      const res = await app.request('/teams/t1/workflow-tasks/task1/stop', {
+        method: 'POST',
+      })
+
+      expect(res.status).toBe(200)
+      const data = await res.json()
+      expect(data.success).toBe(true)
+      expect(data.task.status).toBe('failed')
       expect(authzService.hasPermission).toHaveBeenCalledWith(
         expect.objectContaining({
           permission: Permission.Admin,

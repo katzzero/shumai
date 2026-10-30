@@ -8,9 +8,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **upload**: Improve upload resilience during network drops and device sleep by adding continuous exponential backoff retries and extending upload link expiration to 12 hours
+
 ### Fixed
 
+- **upload**: Display a clear diagnostic error toast when remote file uploads fail due to an unconfigured or localhost S3 storage endpoint
+
 ### Changed
+
+## [0.6.2] - 2026-10-29
+
+### Added
+
+* **mcp**: Add a built-in MCP server supporting OAuth 2.1 and API tokens, allowing external AI agents (such as Claude Code, Cursor, or Kiro) to browse projects, manage and upload files, inspect media contents (images, video frames, PDF pages, 3D models, and text), search assets, manage review comments, update metadata, and organize version stacks
+* **cli**: Add `shumai-cli` commands to download files (`download`), view and render media contents (`read`, `render`), search and copy files (`search`, `copy`), manage review comments (`comment`), view and update metadata (`field ls`, `meta set`), organize version stacks (`version`), and view folder instructions (`instructions`)
+* **agent**: The built-in agent can now list accessible projects, search files by name, meaning, or metadata, read and post review comments, update metadata, copy files, stack and unstack versions, and read folder instructions (`AGENTS.md`), with configurable permissions per agent
+
+### Fixed
+
+
+### Changed
+
+
+## [0.6.1] - 2026-10-24
+
+### Added
+
+* **dashboard**: Add Workflow Tasks section to the Team Dashboard allowing team owners to monitor background workflow jobs, inspect execution payloads and outputs, and stop in-flight tasks
+
+### Fixed
+
+* **metadata**: Fix an issue where clicking to edit a metadata field on a card or list row inadvertently selected the file, and prevent expanded text overlays or date pickers from being clipped by container borders
+
+### Changed
+
+* **deps**: Upgrade Bun to 1.4.4
 
 ## [0.6.0] - 2026-10-20
 
